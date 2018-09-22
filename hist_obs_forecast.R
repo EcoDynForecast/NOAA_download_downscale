@@ -54,13 +54,13 @@ obs <- obs.original %>%
 
 # 1.1 make units match
 forecast.data.mean <- forecast.data %>%
-  dplyr::mutate(air_temperature = air_temperature - 273.15,
-                wind_speed = sqrt(eastward_wind^2 + northward_wind^2),
+  dplyr::mutate(air_temperature = air_temperature - 273.15, # convert from K to C
+                wind_speed = sqrt(eastward_wind^2 + northward_wind^2), 
                 surface_downwelling_longwave_flux_in_air = ifelse(surface_downwelling_longwave_flux_in_air==999900000000000000000, NA,surface_downwelling_longwave_flux_in_air),
                 surface_downwelling_shortwave_flux_in_air = ifelse(surface_downwelling_shortwave_flux_in_air==999900000000000000000, NA,surface_downwelling_shortwave_flux_in_air),
-                precipitation_flux = ifelse(precipitation_flux==999900000000000000000, NA,precipitation_flux),
+                precipitation_flux = ifelse(precipitation_flux==999900000000000000000, NA, precipitation_flux),
                 data.source = "forecast") %>%
-  group_by(timestamp) %>%
+  group_by(timestamp) %>% # get mean across all ensembles
   dplyr::summarize(temp = mean(air_temperature),
                    lw = mean(surface_downwelling_longwave_flux_in_air, na.rm = TRUE),
                    sw = mean(surface_downwelling_shortwave_flux_in_air, na.rm = TRUE),
@@ -71,21 +71,21 @@ forecast.data.mean <- forecast.data %>%
             
 obs.units.match <- obs %>%
   dplyr::mutate(precip_rate = Rain_mm_Tot/60) # convert from mm/min to kg/m2/s
+# --------------------------------------
+# 1. Aggregate to 6-hourly
+# --------------------------------------
+# 
 
-# 2.0 aggregaet to 6-hour
-
-
-
-timestamp.0 = as_datetime("2018-04-05 08:00:00 EDT")
+timestamp.0 = as_datetime("2018-04-05 08:00:00 EDT") # beginning of first 6-hour period
 
 obs.6.hourly <- obs.units.match %>% 
   mutate(group = as.integer(difftime(timestamp,timestamp.0, units = c("mins"))/(60*6))) %>%
-  group_by(group) %>%
-  dplyr::mutate(precip.rate = sum(precip_rate),
+  group_by(group) %>% # create groups for each 6-hour time period
+  dplyr::mutate(precip.rate = mean(precip_rate, na.rm = TRUE),
                 avg.ws = mean(WS_ms_Avg, na.rm = TRUE),
                 data.source = "observations") %>%
   ungroup() %>%
-  filter(hour %in% c(2,8,14,20) & minute(timestamp) == 0) %>%
+  filter(hour %in% c(2,8,14,20) & minute(timestamp) == 0) %>% 
   dplyr::rename(temp = AirTC_Avg,
           RH = RH,
           lw = IR01UpCo_Avg,
@@ -97,8 +97,10 @@ joined.6.hourly <- rbind(
   subset(forecast.data.mean, select = common_cols)
 )
 
-# joined.6.hourly <- dplyr::inner_join(obs.6.hourly, forecast.data.mean, by = "timestamp")
-
+# --------------------------------------
+# 1. Make Histograms to Compares Forecasts and Obs
+# --------------------------------------
+# 
 
 ## TEMPERATURE [C]
 
@@ -120,9 +122,9 @@ ggplot(data = joined.6.hourly %>% group_by(timestamp),aes(lw, fill = data.source
   geom_density(alpha = 0.3) +
   ggtitle("Longwave Radiation [W/m2]")
 
-# ggplot(data = joined.6.hourly %>% filter(precip.rate >0 & data.source == "observations") %>% group_by(timestamp), aes(precip.rate)) + # one plot containing all ensembles
-#   geom_density(alpha = 0.3) +
-#   ggtitle("Precipitation Rate [kg/m2/s]")
+ ggplot(data = joined.6.hourly %>% group_by(timestamp), aes(precip.rate,  fill = data.source)) + # one plot containing all ensembles
+  geom_density(alpha = 0.3) +
+   ggtitle("Precipitation Rate [kg/m2/s]")
 
 ggplot(data = joined.6.hourly %>% group_by(timestamp),aes(avg.ws, fill = data.source)) + # one plot containing all ensembles
   geom_density(alpha = 0.3) +
