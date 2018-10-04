@@ -8,10 +8,6 @@ library(ggpmisc)
 library(gridExtra)
 library(purrr)
 
-# 9/29 times: 9:25-10:00 & 10:50-11:20
-# 10/01 times: 7:00-10:30 figuring out code from Mike Dietz, spline function, purrr, nested dataframes, figuring out bug in code (was actually caused by gaps in data)
-# 10/03 time: 1:20 - 3:20
-
 ## Organizing forecast and observational Data
 obs.data <- read.csv("/Users/laurapuckett/Documents/Research/Fall 2018/observations/carina-scc-obs/FCRmet.csv", header = TRUE)
 

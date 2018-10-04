@@ -8,19 +8,6 @@ library(ggpmisc)
 library(gridExtra)
 library(purrr)
 
-## solar geometry
-inv =  1/24
-start_day = 115
-num_days = 5
-end_day = start_day + num_days
-doy = seq(start_day,end_day, by = inv)
-lat = 37.307
-lon = 360-79.837
-solar_geom(doy = seq(start_day,end_day, by = inv), lon, lat)
-# 9/29 times: 9:25-10:00 & 10:50-11:20
-# 10/01 times: 7:00-10:30 figuring out code from Mike Dietz, spline function, purrr, nested dataframes, figuring out bug in code (was actually caused by gaps in data)
-# tasks:
-
 ## Organizing forecast and observational Data
 obs.data <- read.csv("/Users/laurapuckett/Documents/Research/Fall 2018/observations/carina-scc-obs/FCRmet.csv", header = TRUE)
 
@@ -61,15 +48,17 @@ forecast.units.match <- forecast.data %>%
 obs.units.match <- obs %>%
   dplyr::mutate(precip_rate = Rain_mm_Tot/60)
 forecast.obs.repeat <- forecast.units.match %>%
-  group_by(ensembles, avg.sw, doy) %>%
-  tidyr::expand(doy = c(doy - 6/24,doy - 5/24,doy - 3/24,doy - 2/24,doy - 1/24, doy)) # repeat NOAA values over past 6 hours
+  group_by(ensembles, temp, avg.ws, RH, doy) %>%
+  tidyr::expand(doy = c(doy - 6/24,doy - 5/24,doy - 4/24,doy - 3/24,doy - 2/24,doy - 1/24, doy)) # repeat NOAA values over past 6 hours
+
+start_day = 140
+num_days = 5
+end_day = start_day + num_days
 
 tmp.obs <- obs %>% filter(doy >= start_day & doy <= end_day) %>% group_by(timestamp, doy, hour)
 tmp.NOAA <- forecast.obs.repeat %>% filter(doy >= start_day & doy <= end_day)
-tmp.mod = data.frame(doy = seq(start_day,end_day, by = inv), solar = solar_geom(seq(start_day,end_day, by = inv)+4/24, lon, lat))
 
 ggplot() +
-  geom_line(data =tmp.mod, aes(doy, solar), col = "red")+
   geom_line(data = tmp.obs, aes(doy, SR01Up_Avg), col = "black")+
   geom_line(data = tmp.NOAA, aes(doy, avg.sw, group = ensembles), col = "blue") +
 scale_color_manual(values= colors, labels = c("four", "six", "eight")) 
@@ -80,33 +69,45 @@ colors <- c(
   "NOAA" = "blue"
 )
 
-
-plot(doy, solar_geom(doy = doy+4/24, lon, lat), type = "l", col = 'red', xlab = "day of year", ylab = "W/m2")
-lines(tmp.obs$doy, tmp.obs$SR01Up_Avg, type = 'l')
-points(tmp.NOAA$doy, tmp.NOAA$avg.sw, col = 'blue', type = 'l')
-
 ### interpolating sw
 
 interpolate <- function(doy, var){
   result <- splinefun(doy, var, method = "monoH.FC")
-  return(result(seq(min(doy),max(doy),1/48)))
+  return(result(seq(min(doy),max(doy),1/24)))
 }
 
 by.ens <- forecast.units.match %>% 
   group_by(ensembles)
 
-new.dfs.vars <- do(by.ens, interp.sw = interpolate(.$doy,.$avg.sw))
-new.dfs.doy <- by.ens %>% do(doy = seq(min(forecast.units.match$doy), max(forecast.units.match$doy), 1/48))
-new.dfs <- inner_join(new.dfs.doy, new.dfs.vars, by = "ensembles") %>% unnest()
+new.dfs.temp <- do(by.ens, interp.temp = interpolate(.$doy,.$temp))
+new.dfs.avg.ws <- do(by.ens, interp.avg.ws = interpolate(.$doy,.$avg.ws))
+new.dfs.RH <- do(by.ens, interp.RH = interpolate(.$doy,.$RH))
+new.dfs.doy <- by.ens %>% do(doy = seq(min(forecast.units.match$doy), max(forecast.units.match$doy), 1/24))
+new.dfs <- inner_join(new.dfs.doy, new.dfs.temp, by = "ensembles") %>%
+  inner_join(new.dfs.avg.ws) %>%
+  inner_join(new.dfs.RH) %>% unnest()
 
 tmp.new.dfs <- new.dfs %>% filter(doy >= start_day & doy <= end_day)
 tmp.new.dfs <- tmp.new.dfs %>%
-  mutate(doy = doy - 3/24,
-         interp.sw = ifelse(interp.sw<0,0,interp.sw)) # adjust to be center of 6-hour period and force values >=0
+  mutate(doy = doy) # adjust to be center of 6-hour period and force values >=0
 alpha = 0.7
+## temp
 ggplot() +
-  geom_line(data =tmp.mod, aes(doy, solar), col = "red", alpha = alpha)+
-  geom_line(data = tmp.obs, aes(doy, SR01Up_Avg), col = "black", alpha = alpha)+
-  geom_line(data = tmp.NOAA, aes(doy, avg.sw, group = ensembles), col = "blue", alpha = alpha) +
-  geom_line(data = tmp.new.dfs, aes(doy, interp.sw, group = ensembles), col = "green", alpha = alpha)
+  geom_line(data = tmp.obs, aes(doy, AirTC_Avg), col = "black", alpha = alpha)+
+  geom_line(data = tmp.NOAA, aes(doy, temp, group = ensembles), col = "blue", alpha = alpha) +
+  geom_line(data = tmp.new.dfs, aes(doy, interp.temp, group = ensembles), col = "green", alpha = alpha)
   scale_color_manual(values= colors, labels = c("four", "six", "eight")) 
+## wind speed  
+  ggplot() +
+    geom_line(data = tmp.obs, aes(doy, WS_ms_Avg), col = "black", alpha = alpha)+
+    geom_line(data = tmp.NOAA, aes(doy, avg.ws, group = ensembles), col = "blue", alpha = alpha) +
+    geom_line(data = tmp.new.dfs, aes(doy, interp.avg.ws, group = ensembles), col = "green", alpha = alpha)
+  scale_color_manual(values= colors, labels = c("four", "six", "eight")) 
+## relative humidity  
+  ggplot() +
+    geom_line(data = tmp.obs, aes(doy, RH), col = "black", alpha = alpha) +
+    geom_line(data = tmp.NOAA, aes(doy, RH, group = ensembles), col = "blue", alpha = alpha) +
+    geom_line(data = tmp.new.dfs, aes(doy, interp.RH, group = ensembles), col = "green", alpha = alpha)
+  scale_color_manual(values= colors, labels = c("four", "six", "eight")) 
+
+  
