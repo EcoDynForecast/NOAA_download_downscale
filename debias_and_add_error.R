@@ -1,4 +1,4 @@
-debias_and_add_error <- function(joined.6.hourly){
+debias_and_add_error <- function(joined.6.hourly, nmembers){
   # rm(list = ls())
   # library(lubridate)
   # library(dplyr)
@@ -7,15 +7,17 @@ debias_and_add_error <- function(joined.6.hourly){
   # library(gridExtra)
   # nmembers = 20
   # path.working <- "/Users/laurapuckett/Documents/Research/Fall 2018/"
-  # joined.6.hourly = readRDS(file = paste(path.working, "my_files/","joined.6.hourly", sep = "")) %>%
-  #   rename(c("ensembles" = "NOAA.member"))
+  # joined.6.hourly = readRDS(file = paste(path.working, "my_files/","joined.6.hourly", sep = "")) ]
   
   # will need to aggregate shortwave to daily, compare to obs, then apply equations to get back to hourly at temporal downscaling steps. Mike Dietze has done this already - might have to track it down. (Prediction Ecology, a First Principles Framework) Look up Solar Geometry. 
   # most vars will be interpolated for temporal downscaling
   # 
   # End Goal: plot NOAA ensembles vs downscaled NOAA ensemble members
-  
-  # don't take ensemble mean - do everything for each ensemble (completed 9-26)
+
+  # WORK LOG
+  # develop workflow for applying models to forecast array, creating ensembles, and adding noise (9-24, 2 hours) 
+  # don't take ensemble mean - do everything for each ensemble (completed 9-26, 30 minutes)
+  # organize code into functions and clean up - 30 minutes (9-26)
   
   lin.mod <- function(col.obs, col.for){
     model = lm(col.obs ~ col.for)
@@ -35,7 +37,7 @@ debias_and_add_error <- function(joined.6.hourly){
   avg.sw.res.sd = lm.res.sd(joined.6.hourly$avg.sw.obs, joined.6.hourly$avg.sw.for)
   avg.lw.res.sd = lm.res.sd(joined.6.hourly$avg.lw.obs, joined.6.hourly$avg.lw.for)
   precip.rate.res.sd = lm.res.sd(joined.6.hourly$precip.rate.obs, joined.6.hourly$precip.rate.for)
-  avg.ws.res.sd = lm.res.sd(joined.6.hourly$avg.ws.obs, joined.6.hourly$avg.ws.for)
+  ws.res.sd = lm.res.sd(joined.6.hourly$ws.obs, joined.6.hourly$ws.for)
   
   
   debiased <- joined.6.hourly %>% 
@@ -44,23 +46,24 @@ debias_and_add_error <- function(joined.6.hourly){
            avg.sw.mod =  lin.mod(joined.6.hourly$avg.sw.obs, joined.6.hourly$avg.sw.for),
            avg.lw.mod =  lin.mod(joined.6.hourly$avg.lw.obs, joined.6.hourly$avg.lw.for),
            precip.rate.mod =  lin.mod(joined.6.hourly$precip.rate.obs, joined.6.hourly$precip.rate.for),
-           avg.ws.mod =  lin.mod(joined.6.hourly$avg.ws.obs, joined.6.hourly$avg.ws.for)) %>%
-    select(timestamp, NOAA.member, temp.mod, RH.mod, avg.sw.mod, avg.lw.mod, precip.rate.mod, avg.ws.mod)
+           ws.mod =  lin.mod(joined.6.hourly$ws.obs, joined.6.hourly$ws.for)) %>%
+    select(timestamp, NOAA.member, temp.mod, RH.mod, avg.sw.mod, avg.lw.mod, precip.rate.mod, ws.mod)
   
   
   debias.with.noise <- debiased %>% 
-    group_by(timestamp, NOAA.member, temp.mod, RH.mod, avg.sw.mod, avg.lw.mod, precip.rate.mod, avg.ws.mod) %>%
+    group_by(timestamp, NOAA.member, temp.mod, RH.mod, avg.sw.mod, avg.lw.mod, precip.rate.mod, ws.mod) %>%
     expand(dscale.member = 1:nmembers) %>% group_by(timestamp) %>%
     mutate(temp = temp.mod + rnorm(mean = 0, sd = temp.res.sd, n = nmembers),
            RH = RH.mod + rnorm(mean = 0, sd = RH.res.sd, n = nmembers),
            avg.sw = avg.sw.mod + rnorm(mean = 0, sd = avg.sw.res.sd, n = nmembers),
            avg.lw = avg.lw.mod + rnorm(mean = 0, sd = avg.lw.res.sd, n = nmembers),
            precip.rate = precip.rate.mod + rnorm(mean = 0, sd = precip.rate.res.sd, n = nmembers),
-           avg.ws = avg.ws.mod + rnorm(mean = 0, sd = avg.ws.res.sd, n = nmembers)) # %>%
+           ws = ws.mod + rnorm(mean = 0, sd = ws.res.sd, n = nmembers)) # %>%
   # group_by(timestamp) %>% # TO CHECK ENSEMBLES
   # dplyr::summarize(mod.temp = mean(temp.mod), 
   #          mean.ensemble = mean(temp))
   
   
   saveRDS(debias.with.noise, file = paste(path.working, "/debias.with.noise",sep = ""))
+  return(debias.with.noise)
 }

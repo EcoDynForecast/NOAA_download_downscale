@@ -52,7 +52,6 @@ forecast.obs.repeat <- forecast.units.match %>%
   dplyr::group_by(ensembles, avg.sw, doy) %>%
   tidyr::expand(doy = c(doy - 5/24,doy - 4/24,doy - 3/24,doy - 2/24,doy - 1/24, doy)) # repeat NOAA values over past 6 hours
 
-
 ## solar geometry
 inv =  1/24
 start_day = 140

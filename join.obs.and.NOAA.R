@@ -36,7 +36,7 @@ join.obs.and.NOAA <- function(obs.data, NOAA.data){
              "surface_downwelling_shortwave_flux_in_air" = "avg.sw",
              "precipitation_flux" = "precip.rate",
              "relative_humidity" = "RH",
-             "wind_speed" = "avg.ws"))
+             "wind_speed" = "ws"))
   
   obs.units.match <- obs %>%
     dplyr::mutate(precip_rate = Rain_mm_Tot/60) # convert from mm/min to kg/m2/s
@@ -51,14 +51,16 @@ join.obs.and.NOAA <- function(obs.data, NOAA.data){
     mutate(group = as.integer(difftime(timestamp,timestamp.0, units = c("mins"))/(60*6))) %>%
     group_by(group) %>% # create groups for each 6-hour time period
     dplyr::mutate(precip.rate = mean(precip_rate, na.rm = TRUE),
-                  avg.ws = mean(WS_ms_Avg, na.rm = TRUE),
                   avg.lw = mean(IR01UpCo_Avg, na.rm = TRUE),
                   avg.sw = mean(SR01Up_Avg, na.rm = TRUE)) %>%
+    ungroup() %>%
+    group_by(hour) %>%
+    mutate(ws = mean(WS_ms_Avg, na.rm = TRUE)) %>% # hourly average wind_speed 
     ungroup() %>%
     filter(hour %in% c(2,8,14,20) & minute(timestamp) == 0) %>% 
     dplyr::rename(temp = AirTC_Avg)
   
-  joined.6.hourly = inner_join(obs.6.hourly %>% select(timestamp, temp, avg.lw, avg.sw, precip.rate, RH, avg.ws), forecast.units.match %>% select(timestamp, ensembles, temp, avg.lw, avg.sw, precip.rate, RH, avg.ws), by = "timestamp", suffix = c(".obs",".for")) %>%
+  joined.6.hourly = inner_join(obs.6.hourly %>% select(timestamp, temp, avg.lw, avg.sw, precip.rate, RH, ws), forecast.units.match %>% select(timestamp, ensembles, temp, avg.lw, avg.sw, precip.rate, RH, ws), by = "timestamp", suffix = c(".obs",".for")) %>%
     rename(c("ensembles" = "NOAA.member"))
   saveRDS(joined.6.hourly, file = paste(path.working, "my_files/","joined.6.hourly", sep = ""))
   return(joined.6.hourly)
