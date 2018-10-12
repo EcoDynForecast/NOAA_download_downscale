@@ -1,4 +1,4 @@
-debias_and_add_error <- function(joined.6.hourly, nmembers){
+debias_and_add_error <- function(joined.data, nmembers){
   # rm(list = ls())
   # library(lubridate)
   # library(dplyr)
@@ -7,9 +7,9 @@ debias_and_add_error <- function(joined.6.hourly, nmembers){
   # library(gridExtra)
   # nmembers = 20
   # path.working <- "/Users/laurapuckett/Documents/Research/Fall 2018/"
-  # joined.6.hourly = readRDS(file = paste(path.working, "my_files/","joined.6.hourly", sep = "")) ]
+  # joined.data = readRDS(file = paste(path.working, "my_files/","joined.data", sep = "")) ]
   
-  # will need to aggregate shortwave to daily, compare to obs, then apply equations to get back to hourly at temporal downscaling steps. Mike Dietze has done this already - might have to track it down. (Prediction Ecology, a First Principles Framework) Look up Solar Geometry. 
+. 
   # most vars will be interpolated for temporal downscaling
   # 
   # End Goal: plot NOAA ensembles vs downscaled NOAA ensemble members
@@ -32,38 +32,41 @@ debias_and_add_error <- function(joined.6.hourly, nmembers){
     return(res.sd)
   }
   
-  temp.res.sd = lm.res.sd(joined.6.hourly$temp.obs, joined.6.hourly$temp.for)
-  RH.res.sd = lm.res.sd(joined.6.hourly$RH.obs, joined.6.hourly$RH.for)
-  avg.sw.res.sd = lm.res.sd(joined.6.hourly$avg.sw.obs, joined.6.hourly$avg.sw.for)
-  avg.lw.res.sd = lm.res.sd(joined.6.hourly$avg.lw.obs, joined.6.hourly$avg.lw.for)
-  precip.rate.res.sd = lm.res.sd(joined.6.hourly$precip.rate.obs, joined.6.hourly$precip.rate.for)
-  ws.res.sd = lm.res.sd(joined.6.hourly$ws.obs, joined.6.hourly$ws.for)
+  temp.res.sd = lm.res.sd(joined.data$temp.obs, joined.data$temp.for)
+  RH.res.sd = lm.res.sd(joined.data$RH.obs, joined.data$RH.for)
+  #avg.sw.res.sd = lm.res.sd(joined.data$avg.sw.obs, joined.data$avg.sw.for)
+  #avg.lw.res.sd = lm.res.sd(joined.data$avg.lw.obs, joined.data$avg.lw.for)
+  #precip.rate.res.sd = lm.res.sd(joined.data$precip.rate.obs, joined.data$precip.rate.for)
+  ws.res.sd = lm.res.sd(joined.data$ws.obs, joined.data$ws.for)
   
   
-  debiased <- joined.6.hourly %>% 
-    mutate(temp.mod =  lin.mod(joined.6.hourly$temp.obs, joined.6.hourly$temp.for),
-           RH.mod =  lin.mod(joined.6.hourly$RH.obs, joined.6.hourly$RH.for),
-           avg.sw.mod =  lin.mod(joined.6.hourly$avg.sw.obs, joined.6.hourly$avg.sw.for),
-           avg.lw.mod =  lin.mod(joined.6.hourly$avg.lw.obs, joined.6.hourly$avg.lw.for),
-           precip.rate.mod =  lin.mod(joined.6.hourly$precip.rate.obs, joined.6.hourly$precip.rate.for),
-           ws.mod =  lin.mod(joined.6.hourly$ws.obs, joined.6.hourly$ws.for)) %>%
-    select(timestamp, NOAA.member, temp.mod, RH.mod, avg.sw.mod, avg.lw.mod, precip.rate.mod, ws.mod)
+  debiased <- joined.data %>% 
+    dplyr::mutate(temp.mod =  lin.mod(joined.data$temp.obs, joined.data$temp.for),
+           RH.mod =  lin.mod(joined.data$RH.obs, joined.data$RH.for),
+           #avg.sw.mod =  lin.mod(joined.data$avg.sw.obs, joined.data$avg.sw.for),
+           #avg.lw.mod =  lin.mod(joined.data$avg.lw.obs, joined.data$avg.lw.for),
+           #precip.rate.mod =  lin.mod(joined.data$precip.rate.obs, joined.data$precip.rate.for),
+           ws.mod =  lin.mod(joined.data$ws.obs, joined.data$ws.for)) %>%
+    select(timestamp, group.num, doy, NOAA.member, temp.mod, RH.mod, ws.mod)
   
-  
-  debias.with.noise <- debiased %>% 
-    group_by(timestamp, NOAA.member, temp.mod, RH.mod, avg.sw.mod, avg.lw.mod, precip.rate.mod, ws.mod) %>%
-    expand(dscale.member = 1:nmembers) %>% group_by(timestamp) %>%
-    mutate(temp = temp.mod + rnorm(mean = 0, sd = temp.res.sd, n = nmembers),
-           RH = RH.mod + rnorm(mean = 0, sd = RH.res.sd, n = nmembers),
-           avg.sw = avg.sw.mod + rnorm(mean = 0, sd = avg.sw.res.sd, n = nmembers),
-           avg.lw = avg.lw.mod + rnorm(mean = 0, sd = avg.lw.res.sd, n = nmembers),
-           precip.rate = precip.rate.mod + rnorm(mean = 0, sd = precip.rate.res.sd, n = nmembers),
-           ws = ws.mod + rnorm(mean = 0, sd = ws.res.sd, n = nmembers)) # %>%
+
+  debiased.with.noise <- debiased %>%
+    group_by(timestamp, group.num, doy, NOAA.member, temp.mod, RH.mod,  ws.mod) %>%
+    expand(dscale.member = 1:nmembers) %>%
+    ungroup() %>%
+    group_by(timestamp, dscale.member, group.num, doy, NOAA.member, temp.mod, RH.mod,  ws.mod) %>%
+    dplyr::mutate(temp.mod.noise = temp.mod + rnorm(mean = 0, sd = temp.res.sd, n = 1),
+           RH.mod.noise = RH.mod + rnorm(mean = 0, sd = RH.res.sd, n = 1),
+           #avg.sw = avg.sw.mod + rnorm(mean = 0, sd = avg.sw.res.sd, n = nmembers),
+           #avg.lw = avg.lw.mod + rnorm(mean = 0, sd = avg.lw.res.sd, n = nmembers),
+           #precip.rate = precip.rate.mod + rnorm(mean = 0, sd = precip.rate.res.sd, n = nmembers),
+           ws.mod.noise = ws.mod + rnorm(mean = 0, sd = ws.res.sd, n = 1)) %>%
+    select(timestamp, dscale.member, group.num, doy, NOAA.member, temp.mod, temp.mod.noise, RH.mod, RH.mod.noise, ws.mod, ws.mod.noise)
   # group_by(timestamp) %>% # TO CHECK ENSEMBLES
-  # dplyr::summarize(mod.temp = mean(temp.mod), 
+  # dplyr::summarize(mod.temp = mean(temp.mod),
   #          mean.ensemble = mean(temp))
   
   
-  saveRDS(debias.with.noise, file = paste(path.working, "/debias.with.noise",sep = ""))
-  return(debias.with.noise)
+  #saveRDS(debiased, file = paste(path.working, "/debiased",sep = ""))
+  return(debiased.with.noise)
 }

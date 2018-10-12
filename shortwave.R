@@ -12,13 +12,13 @@ library(purrr)
 obs.data <- read.csv("/Users/laurapuckett/Documents/Research/Fall 2018/observations/carina-scc-obs/FCRmet.csv", header = TRUE)
 
 obs <- obs.data %>%
-  mutate(date = as.Date(TIMESTAMP, format = '%m/%d/%y'), tz = "US/Eastern") %>%
+  dplyr::mutate(date = as.Date(TIMESTAMP, format = '%m/%d/%y'), tz = "US/Eastern") %>%
   separate(TIMESTAMP, c("date.extra","time")," ", convert = TRUE) %>%
-  mutate(yday = lubridate::yday(date)) %>%
+  dplyr::mutate(yday = lubridate::yday(date)) %>%
   separate(time, c("hour","minute"),":", convert = TRUE) %>%
   dplyr::mutate(timestamp = as_datetime(paste(date, " ", hour, ":", minute,":00", sep = ""), tz = "US/Eastern"))
 attributes(obs$timestamp)$tzone <- "EST"
-obs <- obs %>% mutate(date = as_date(date),
+obs <- obs %>% dplyr::mutate(date = as_date(date),
                       doy = yday(timestamp) + hour(timestamp)/24 + minute(timestamp)/(24*60))
 # 1.1 make units match
 path.working <- "/Users/laurapuckett/Documents/Research/Fall 2018/"
@@ -28,12 +28,12 @@ forecast.data <- NOAA.data %>%
   dplyr::mutate(date = as_date(date),
                 timestamp = as_datetime(forecast.date.hour, tz = "US/Eastern"))
 attributes(forecast.data$timestamp)$tzone <- "EST"
-forecast.data <- forecast.data %>% mutate(yday = lubridate::yday(date),
+forecast.data <- forecast.data %>% dplyr::mutate(yday = lubridate::yday(date),
                 hour = hour(timestamp),
                 doy = yday(timestamp) + hour(timestamp)/24)
 
 forecast.units.match <- forecast.data %>%
-  mutate(air_temperature = air_temperature - 273.15, # convert from K to C
+  dplyr::mutate(air_temperature = air_temperature - 273.15, # convert from K to C
          wind_speed = sqrt(eastward_wind^2 + northward_wind^2), 
          surface_downwelling_longwave_flux_in_air = ifelse(surface_downwelling_longwave_flux_in_air==999900000000000000000, NA,surface_downwelling_longwave_flux_in_air),
          surface_downwelling_shortwave_flux_in_air = ifelse(surface_downwelling_shortwave_flux_in_air==999900000000000000000, NA,surface_downwelling_shortwave_flux_in_air),
