@@ -9,7 +9,7 @@ match_units <- function(obs.data, NOAA.data){
   forecast.data <- NOAA.data %>%
       rename(c("forecast.date" = "date")) %>%
       dplyr::mutate(date = as_date(date),
-                    timestamp = as_datetime(forecast.date.hour, tz = "US/Eastern"))
+                    timestamp = force_tz(as_datetime(forecast.date.hour),"US/Eastern"))
     attributes(forecast.data$timestamp)$tzone <- "EST"
     forecast.data <- forecast.data %>%
       dplyr::mutate(yday = lubridate::yday(date),
@@ -19,11 +19,11 @@ match_units <- function(obs.data, NOAA.data){
     
     
   obs.units.match <- obs.data %>%
-    dplyr::mutate(date = as.Date(TIMESTAMP, format = '%m/%d/%y'), tz = "US/Eastern") %>%
+    dplyr::mutate(date = force_tz(as.Date(TIMESTAMP, format = '%m/%d/%y')),"US/Eastern") %>%
     separate(TIMESTAMP, c("date.extra","time")," ", convert = TRUE) %>%
     dplyr::mutate(yday = lubridate::yday(date)) %>%
     separate(time, c("hour","minute"),":", convert = TRUE) %>%
-    dplyr::mutate(timestamp = as_datetime(paste(date, " ", hour, ":", minute,":00", sep = ""), tz = "US/Eastern"))
+    dplyr::mutate(timestamp = force_tz( as_datetime(paste(date, " ", hour, ":", minute,":00", sep = "")), "US/Eastern"))
   attributes(obs.units.match$timestamp)$tzone <- "EST"
   obs.units.match <- obs.units.match %>% dplyr::mutate(date = as_date(date),
            doy = yday(timestamp) + hour(timestamp)/24 + minute(timestamp)/(24*60),
@@ -44,4 +44,5 @@ match_units <- function(obs.data, NOAA.data){
              "relative_humidity" = "RH",
              "wind_speed" = "ws"))
   saveRDS(forecast.units.match, file = paste(path.working,"/forecast.units.match.RData",sep= ""))
+  return(list(obs.units.match, forecast.units.match))
 }

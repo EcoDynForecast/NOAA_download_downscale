@@ -1,5 +1,5 @@
 agg_and_join <- function(obs.units.match, forecast.units.match){
-  timestamp.0 = as_datetime("2018-04-05 08:00:00 EDT") # beginning of first 6-hour period
+  timestamp.0.flux = force_tz(as_datetime("2018-04-22 20:00:00"),"US/Eastern") # beginning of first 6-hour period for fluxes
   
   obs.6.hourly <- obs.units.match %>% 
     dplyr::mutate(group = as.integer(difftime(timestamp,timestamp.0, units = c("mins"))/(60*6))) %>%

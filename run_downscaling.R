@@ -17,18 +17,22 @@
 # 0. Setup
 # --------------------------------------
 
-# rm(list = ls())
+rm(list = ls())
 library(lubridate)
 library(dplyr)
 library(plyr)
 library(tidyr)
 library(ggpmisc)
 library(gridExtra)
+library(grid)
+library(png)
 path.working <- "/Users/laurapuckett/Documents/Research/Fall 2018/"
 setwd(path.working)
 path.my.files <- paste(path.working, "/my_files/",sep = "")
-NOAA.data <- readRDS(paste(path.working, "my_files/","NOAA.first.day.Rdata", sep = ""))
-obs.data <- read.csv("/Users/laurapuckett/Documents/Research/Fall 2018/observations/carina-scc-obs/FCRmet.csv", header = TRUE)
+NOAA.flux <- readRDS(paste(path.working, "my_files/","NOAA.flux.forecasts.10.17", sep = ""))
+NOAA.state <- readRDS(paste(path.working, "my_files/","NOAA.state.forecasts.10.17", sep = ""))
+NOAA.data = inner_join(NOAA.flux, NOAA.state, by = c("forecast.date.hour","ensembles"))
+obs.data <- read.csv(paste(path.working, "my_files/", "FCRmet.10.17.csv", sep = ""),header = TRUE)
 
 setwd(path.my.files)
 source("match_units.R")
@@ -36,21 +40,20 @@ source("agg_and_join.R")
 source("debias_and_add_error.R")
 source("spline_NOAA.R")
 source("plot_spline.R")
-
-match_units(obs.data, NOAA.data)
-obs.units.match = readRDS(file = paste(path.working,"/obs.units.match.RData",sep= ""))
-forecast.units.match = readRDS(file = paste(path.working,"/forecast.units.match.RData",sep= ""))
+source("new.plot_spline.R")
+source("summary_plottting.R")
+forecast.units.match = match_units(obs.data, NOAA.data)[2]
+obs.units.match = match_units(obs.data, NOAA.data)[1]
 forecast.units.match[,"group.num"] = row(forecast.units.match)[,1]
 joined.data <- agg_and_join(obs.units.match, forecast.units.match)
 joined.data[,"group.num"] = row(joined.data)[,1]
-debiased.with.noise <- debias_and_add_error(joined.data, nmembers = 5)
+debiased.results <- debias_and_add_error(joined.data, nmembers = 5)
+debiased <- debiased.results[[1]]
+debiased.with.noise <- debiased.results[[2]]
 
-expanded.debiased.with.noise <- debiased.with.noise  %>%
-  group_by(NOAA.member, group.num, dscale.member, doy, temp.mod.noise, ws.mod.noise, RH.mod.noise) %>%
-  tidyr::expand(doy = c(doy - 6/24,doy - 5/24,doy - 4/24,doy - 3/24,doy - 2/24,doy - 1/24, doy)) %>%
-  ungroup()
-
-debiased.downscaled <- spline_NOAA(debiased.with.noise)
+debiased.dowscaled.results <- spline_NOAA(debiased, debiased.with.noise)
+debiased.downscaled <- debiased.dowscaled.results[[1]]
+debiased.downscaled.with.noise <- debiased.dowscaled.results[[2]]
 
 
 expanded.forecast.units.match <- forecast.units.match %>%
@@ -58,11 +61,43 @@ expanded.forecast.units.match <- forecast.units.match %>%
   tidyr::expand(doy = c(doy - 6/24,doy - 5/24,doy - 4/24,doy - 3/24,doy - 2/24,doy - 1/24, doy)) %>%
   ungroup()
 
+expanded.debiased.with.noise <- debiased.with.noise  %>%
+  group_by(NOAA.member, group.num, dscale.member, doy, temp.mod.noise, ws.mod.noise, RH.mod.noise) %>%
+  tidyr::expand(doy = c(doy - 6/24,doy - 5/24,doy - 4/24,doy - 3/24,doy - 2/24,doy - 1/24, doy)) %>%
+  ungroup()
+
 joined.obs.and.ds <- inner_join(obs.units.match, debiased.downscaled, by = "doy")
 joined.obs.and.NOAA <- inner_join(obs.units.match, forecast.units.match, by = "doy")
 
-plot_spline(expanded.forecast.units.match, obs.units.match, expanded.debiased.with.noise, debiased.downscaled, joined.obs.and.ds, joined.obs.and.NOAA, 145,5)
-
+#pdf("./summary_plots_grid_2.pdf")
+var.name =  c("temp","RH","ws")
+var.name.obs = c("AirTC_Avg","RH","WS_ms_Avg")
+vars.title.list = c("Temperature [C]","Relative Humidity [%]","Average Wind Speed [m/s]")
+for (i in 1:length(var.name)){
+  alpha = 0.5
+  plot.1 <- scatter.original(joined.data, var.name[i], plot.title = paste("obs vs NOAA:", vars.title.list[i]))
+  print(plot.1)
+  plot.blank <-  ggplot()
+  
+  residuals_vs_doy(joined.data, var.name[i], plot.title = paste("obs vs NOAA:", vars.title.list[i]))
+  obs_vs_NOAA_fitting(joined.data, var.name[i], plot.title = paste("obs vs NOAA:", vars.title.list[i]))
+  plot.2 <- scatter.debiased(obs.units.match, debiased, debiased.with.noise, var.name[i], var.name.obs[i], plot.title = paste("obs vs debiased:", vars.title.list[i]))
+  print(plot.2)
+  # 
+  # plot.3 <- scatter.debiased.downscaled(obs.units.match, debiased.downscaled, debiased.downscaled.with.noise, var.name[i], var.name.obs[i], plot.title = paste("obs vs debiased & downscaled:", vars.title.list[i]))
+  # 
+  # plot.4 <- new_plot_spline(expanded.forecast.units.match, obs.units.match, expanded.debiased.with.noise, debiased.downscaled, joined.obs.and.ds, joined.obs.and.NOAA, var.name[i], var.name.obs[i], plot.title = paste("Comparison over time", vars.title.list[i]), 115,5)
+  # 
+  # plot.5 <- new_plot_spline(expanded.forecast.units.match, obs.units.match, expanded.debiased.with.noise, debiased.downscaled, joined.obs.and.ds, joined.obs.and.NOAA, var.name[i], var.name.obs[i],  plot.title = paste("Comparison over time", vars.title.list[i]), 200, 5)
+  # #png("/Users/laurapuckett/Documents/Research/Fall 2018/my_files/new.png")
+  # png(paste("./plot.page.",var.name[i], ".png", sep = ""), width = 2048, height = 1536)
+  # grid.arrange(plot.1, plot.blank, plot.2, plot.3, plot.4, plot.5, ncol = 2, nrow = 3)
+  # # print(plot.page)
+  # dev.off()
+  
+  # readPNG(source = paste("./plot.page.",var.name[i], ".png", sep = ""))
+}
+#dev.off()
 
 # source(plot.hist.and.scatter.R)
 # source(plot.hist.difference.and.scatter)

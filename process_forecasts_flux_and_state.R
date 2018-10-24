@@ -18,11 +18,8 @@
 # -----------------------------------
 # TO DO:
 # should change to get files directly from github
-# need to split by ensemble
-# make column to say which date the data is coming from
 # clean up and comment
 # 
-
 #
 # 0. load packages, initialize variables, naviage to data
 # 
@@ -43,6 +40,7 @@ path.working <- "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/"
 # 1. pull first day of forecasts from all dates unless data is missing for a day, then that date's forecast from the most recent available data
 #
 for(i in 1:length(date.list)){
+  date.path = NULL
   temp.data = NULL
   temp.year = NULL
   temp.month = NULL
@@ -58,18 +56,21 @@ for(i in 1:length(date.list)){
     full.path = paste(data.path, date.path,"gep_all_00z.csv", sep = "")
     tmp.data = read.csv(full.path) %>% 
       mutate(forecast.date.hour = force_tz(as.POSIXct(strptime(forecast.date, "%Y-%m-%d %H:%M:%S")), "EST"), # date including hour
-             forecast.date = lubridate::as_date(forecast.date)) # doesn't include hour, only date
-  tmp.state <- tmp.data %>%
+             # forecast.date = lubridate::as_date(forecast.date), # doesn't include hour, only date
+             NOAA.file.group = i) # group number for which file the data is from
+    
+    tmp.state <- tmp.data %>%
       filter(forecast.date.hour %in% c(date.list[i] - hours(4), date.list[i] + hours(2), date.list[i] + hours(8), date.list[i] + hours(14))) %>%
-      select(forecast.date,	ensembles, tmp2m, rh2m, vgrd10m, ugrd10m, forecast.date.hour)
-  tmp.flux <- tmp.data %>%
-    filter(forecast.date.hour %in% c(date.list[i] + hours(2), date.list[i] + hours(8), date.list[i] + hours(14), date.list[i] + hours(20))) %>%
-    select(forecast.date,	ensembles, pratesfc, dlwrfsfc, dswrfsfc, forecast.date.hour)
+      select(ensembles, tmp2m, rh2m, vgrd10m, ugrd10m, forecast.date.hour, NOAA.file.group)
+    
+    tmp.flux <- tmp.data %>%
+      filter(forecast.date.hour %in% c(date.list[i] + hours(2), date.list[i] + hours(8), date.list[i] + hours(14), date.list[i] + hours(20))) %>%
+      select(ensembles, pratesfc, dlwrfsfc, dswrfsfc, forecast.date.hour, NOAA.file.group)
+    flux.forecasts = rbind(flux.forecasts, tmp.flux)
+    state.forecasts = rbind(state.forecasts, tmp.state)
   }else{
     print(paste("You are missing a file for date: ", date.path, sep = ""))
   }
-  flux.forecasts = rbind(flux.forecasts, tmp.flux)
-  state.forecasts = rbind(state.forecasts, tmp.state)
   
 }
 library("plyr")
