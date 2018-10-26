@@ -42,8 +42,8 @@ source("spline_NOAA.R")
 source("plot_spline.R")
 source("new.plot_spline.R")
 source("summary_plottting.R")
-forecast.units.match = match_units(obs.data, NOAA.data)[2]
-obs.units.match = match_units(obs.data, NOAA.data)[1]
+forecast.units.match = match_units(obs.data, NOAA.data)[[2]]
+obs.units.match = match_units(obs.data, NOAA.data)[[1]]
 forecast.units.match[,"group.num"] = row(forecast.units.match)[,1]
 joined.data <- agg_and_join(obs.units.match, forecast.units.match)
 joined.data[,"group.num"] = row(joined.data)[,1]
@@ -69,35 +69,35 @@ expanded.debiased.with.noise <- debiased.with.noise  %>%
 joined.obs.and.ds <- inner_join(obs.units.match, debiased.downscaled, by = "doy")
 joined.obs.and.NOAA <- inner_join(obs.units.match, forecast.units.match, by = "doy")
 
-#pdf("./summary_plots_grid_2.pdf")
+pdf("./summary_plots_grid_10_26.pdf")
 var.name =  c("temp","RH","ws")
 var.name.obs = c("AirTC_Avg","RH","WS_ms_Avg")
 vars.title.list = c("Temperature [C]","Relative Humidity [%]","Average Wind Speed [m/s]")
 for (i in 1:length(var.name)){
   alpha = 0.5
   plot.1 <- scatter.original(joined.data, var.name[i], plot.title = paste("obs vs NOAA:", vars.title.list[i]))
-  print(plot.1)
+  #print(plot.1)
   plot.blank <-  ggplot()
   
-  residuals_vs_doy(joined.data, var.name[i], plot.title = paste("obs vs NOAA:", vars.title.list[i]))
-  obs_vs_NOAA_fitting(joined.data, var.name[i], plot.title = paste("obs vs NOAA:", vars.title.list[i]))
+ # residuals_vs_doy(joined.data, var.name[i], plot.title = paste("obs vs NOAA:", vars.title.list[i]))
+  # obs_vs_NOAA_fitting(joined.data, var.name[i], plot.title = paste("obs vs NOAA:", vars.title.list[i]))
   plot.2 <- scatter.debiased(obs.units.match, debiased, debiased.with.noise, var.name[i], var.name.obs[i], plot.title = paste("obs vs debiased:", vars.title.list[i]))
-  print(plot.2)
+ # print(plot.2)
   # 
-  # plot.3 <- scatter.debiased.downscaled(obs.units.match, debiased.downscaled, debiased.downscaled.with.noise, var.name[i], var.name.obs[i], plot.title = paste("obs vs debiased & downscaled:", vars.title.list[i]))
+   plot.3 <- scatter.debiased.downscaled(obs.units.match, debiased.downscaled, debiased.downscaled.with.noise, var.name[i], var.name.obs[i], plot.title = paste("obs vs debiased & downscaled:", vars.title.list[i]))
   # 
-  # plot.4 <- new_plot_spline(expanded.forecast.units.match, obs.units.match, expanded.debiased.with.noise, debiased.downscaled, joined.obs.and.ds, joined.obs.and.NOAA, var.name[i], var.name.obs[i], plot.title = paste("Comparison over time", vars.title.list[i]), 115,5)
+   plot.4 <- new_plot_spline(expanded.forecast.units.match, obs.units.match, expanded.debiased.with.noise, debiased.downscaled, joined.obs.and.ds, joined.obs.and.NOAA, var.name[i], var.name.obs[i], plot.title = paste("Comparison over time", vars.title.list[i]), 115,5)
   # 
-  # plot.5 <- new_plot_spline(expanded.forecast.units.match, obs.units.match, expanded.debiased.with.noise, debiased.downscaled, joined.obs.and.ds, joined.obs.and.NOAA, var.name[i], var.name.obs[i],  plot.title = paste("Comparison over time", vars.title.list[i]), 200, 5)
-  # #png("/Users/laurapuckett/Documents/Research/Fall 2018/my_files/new.png")
-  # png(paste("./plot.page.",var.name[i], ".png", sep = ""), width = 2048, height = 1536)
-  # grid.arrange(plot.1, plot.blank, plot.2, plot.3, plot.4, plot.5, ncol = 2, nrow = 3)
-  # # print(plot.page)
-  # dev.off()
+   plot.5 <- new_plot_spline(expanded.forecast.units.match, obs.units.match, expanded.debiased.with.noise, debiased.downscaled, joined.obs.and.ds, joined.obs.and.NOAA, var.name[i], var.name.obs[i],  plot.title = paste("Comparison over time", vars.title.list[i]), 200, 5)
+  # png("/Users/laurapuckett/Documents/Research/Fall 2018/my_files/new.png")
+   png(paste("./plot.page.",var.name[i], ".png", sep = ""), width = 2048, height = 1536)
+   grid.arrange(plot.1, plot.blank, plot.2, plot.3, plot.4, plot.5, ncol = 2, nrow = 3)
+   # print(plot.page)
+   dev.off()
   
-  # readPNG(source = paste("./plot.page.",var.name[i], ".png", sep = ""))
+   readPNG(source = paste("./plot.page.",var.name[i], ".png", sep = ""))
 }
-#dev.off()
+ dev.off()
 
 # source(plot.hist.and.scatter.R)
 # source(plot.hist.difference.and.scatter)
