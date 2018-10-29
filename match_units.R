@@ -7,27 +7,31 @@ match_units <- function(obs.data, NOAA.data){
   # 1.0 make date formats match. "date" is the day of the year as "YYYY-MM-DD" and "timestamp" is the date + time as "YYYY-MM-DD HH:MM:SS"
   
   forecast.data <- NOAA.data %>%
-      rename(c("forecast.date" = "date")) %>%
-      dplyr::mutate(date = as_date(date),
-                    timestamp = force_tz(as_datetime(forecast.date.hour),"US/Eastern"))
-    attributes(forecast.data$timestamp)$tzone <- "EST"
-    forecast.data <- forecast.data %>%
-      dplyr::mutate(yday = lubridate::yday(date),
+      #rename(c("forecast.date" = "date")) %>%
+      dplyr::mutate(timestamp = as_datetime(forecast.date.hour, tz = "US/Eastern"),
+                    timestamp = timestamp - 3600) %>% # timezone part is still wrong...hack for now
+    # attributes(forecast.data$timestamp)$tzone <- "US/Eastern"
+    # forecast.data <- forecast.data %>%
+      dplyr::mutate(yday = lubridate::yday(as_date(timestamp)),
                     hour = hour(timestamp),
-                    doy = yday(timestamp) + hour(timestamp)/24) %>%
+                    doy = formattable(round(yday(timestamp) + hour(timestamp)/24,4),4)) %>%
       rename(c("ensembles" = "NOAA.member"))
     
     
-  obs.units.match <- obs.data %>%
-    dplyr::mutate(date = force_tz(as.Date(TIMESTAMP, format = '%m/%d/%y')),"US/Eastern") %>%
+  obs.units.match.1 <- obs.data %>%
+    dplyr::mutate(date = as.Date(TIMESTAMP, format = '%m/%d/%y')) %>%
     separate(TIMESTAMP, c("date.extra","time")," ", convert = TRUE) %>%
     dplyr::mutate(yday = lubridate::yday(date)) %>%
     separate(time, c("hour","minute"),":", convert = TRUE) %>%
-    dplyr::mutate(timestamp = force_tz( as_datetime(paste(date, " ", hour, ":", minute,":00", sep = "")), "US/Eastern"))
-  attributes(obs.units.match$timestamp)$tzone <- "EST"
-  obs.units.match <- obs.units.match %>% dplyr::mutate(date = as_date(date),
+    dplyr::mutate(timestamp = as_datetime(paste(date, " ", hour, ":", minute,":00", sep = ""), tz = "US/Eastern"))
+  # attributes(obs.units.match.1$timestamp)$tzone <- "US/Eastern" # not sure if this step is required
+  
+  obs.units.match <- obs.units.match.1 %>% dplyr::mutate(date = as_date(date),
            doy = yday(timestamp) + hour(timestamp)/24 + minute(timestamp)/(24*60),
-           precip_rate = Rain_mm_Tot/60)
+           precip_rate = Rain_mm_Tot/60) %>%
+    select(-date.extra, -X, -X.1, -X.2, -X.3, -X.4, -BattV, -PAR_Den_Avg,
+           -PAR_Tot_Tot, -BP_kPa_Avg, -WindDir, -NR01TK_Avg, -Albedo_Avg,
+           -Rain_mm_Tot, -IR01DnCo_Avg, -RECORD) # remove unwanted rows
   
   saveRDS(obs.units.match, file = paste(path.working,"obs.units.match.RData",sep= ""))
   
