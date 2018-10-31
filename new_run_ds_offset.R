@@ -50,31 +50,52 @@ forecast.units.match[,"group.num"] = row(forecast.units.match)[,1]
 obs.units.match = match_units(obs.data, NOAA.data)[[1]] %>%
    mutate(doy_minutes = doy,
           doy = formattable(ifelse(minute == 0, round(yday + hour/24,4),NA),4))
-joined.data.old <- agg_and_join(obs.units.match, forecast.units.match)
-joined.data.daily <- joined.data.old %>%
-  mutate(yday = yday(timestamp)) %>% 
-  dplyr::group_by(yday, NOAA.member) %>%
+joined.data.original <- agg_and_join(obs.units.match, forecast.units.match) %>%
+  mutate(yday = yday(timestamp))
+
+joined.data.daily <- joined.data.original %>%
+  dplyr::group_by(NOAA.member, yday) %>%
   dplyr::summarize(temp.obs = mean(temp.obs), # getting daily means from minute or 6-hourly
-         RH.obs = mean(RH.obs),
-         ws.obs = mean(ws.obs),
-         temp.for = mean(temp.for),
-         RH.for = mean(RH.for),
-         ws.for = mean(ws.for),
-         doy = formattable(first(yday),4)) %>%
-  ungroup()
+                   RH.obs = mean(RH.obs),
+                   ws.obs = mean(ws.obs),
+                   temp.for = ifelse(n() == 4, mean(temp.for), NA), # mean is NA if missing data
+                   RH.for = ifelse(n() == 4, mean(RH.for), NA),
+                   ws.for = ifelse(n() == 4, mean(ws.for), NA),
+                   doy = formattable(first(yday),4)) %>%
+  ungroup() %>%
+  filter(is.na(temp.for) == FALSE && is.na(RH.for) == FALSE && is.na(ws.for) == FALSE)
 
-joined.data <- joined.data.old
+joined.data <- joined.data.daily
 joined.data[,"group.num"] = row(joined.data)[,1]
-debiased <- daily_debias_and_add_error(joined.data.daily, nmembers = 5)
+debiased.results <- daily_debias_and_add_error(joined.data, nmembers = 10)
+debiased <- debiased.results[[1]]
+debiased.with.noise <- debiased.results[[2]] %>%
+  mutate(yday = as.integer(doy))
 
-# ggplot(data = debiased, aes(x = temp.obs, y = temp.mod)) +
-#          geom_point(alpha = alpha)
+NOAA.prop <- joined.data.original %>%
+  dplyr::group_by(NOAA.member, doy) %>%
+  dplyr::mutate(temp.for.mean = mean(temp.for),
+                RH.for.mean = mean(RH.for),
+                ws.for.mean = mean(ws.for)) %>%
+  ungroup() %>%
+  mutate(temp.prop = temp.for/temp.for.mean, # proportion of daily mean that each 6-hourly measurement is
+         RH.prop = RH.for/RH.for.mean,
+         ws.prop = ws.for/ws.for.mean) %>%
+  select(NOAA.member, timestamp, doy, yday,temp.for, RH.for, ws.for, temp.for.mean, RH.for.mean, ws.for.mean, temp.prop, RH.prop, ws.prop)
 
+# redistributed = 166 days * 21 NOAA members * 4 meas/day * 10 noise members
+redistributed <- inner_join(debiased.with.noise, NOAA.prop, by = c("doy","NOAA.member")) %>%
+  dplyr::group_by(NOAA.member, doy) %>%
+  dplyr::mutate(ds.temp = temp.mod.noise * temp.prop,
+                ds.RH = RH.mod.noise * RH.prop,
+                ds.ws = ws.mod.noise * ws.prop) %>%
+  ungroup() %>%
+  select(NOAA.member, yday, dscale.member, ds.temp, ds.RH, ds.ws)
 
-
-splined.NOAA <- spline_NOAA_offset(joined.data) %>%
+splined.ds <- new_spline_NOAA_offset(redistributed) %>%
   mutate(doy = formattable(round(doy,4),4))
-joined.obs.and.spline <- inner_join(obs.units.match, splined.NOAA, by = "doy")
+joined.obs.and.spline <- inner_join(obs.units.match, splined.ds, by = "doy")
+
 offset <- joined.obs.and.spline %>%
   dplyr::mutate(doy.group = floor(doy)) %>%
   dplyr::group_by(NOAA.member, doy.group) %>% 
@@ -83,7 +104,9 @@ offset <- joined.obs.and.spline %>%
                 ws.offset = ifelse(hour == 4, interp.ws - WS_ms_Avg, NA),
                 ws.interp.ds = ifelse(hour >= 4, interp.ws - max(ws.offset, na.rm = TRUE),WS_ms_Avg),
                 RH.offset = ifelse(hour == 4, interp.RH - RH, NA),
-                RH.interp.ds = ifelse(hour >= 4, interp.RH - max(RH.offset, na.rm = TRUE),RH))
+                RH.interp.ds = ifelse(hour >= 4, interp.RH - max(RH.offset, na.rm = TRUE),RH)) %>%
+  ungroup()
+  
   
 ## above is hack to select offset at 4am only, and use that value to adjust values for each group starting at 4am,
 ## below is an older, simpler version of this that doesn't take into account missing data - just selects 5th element of group, which is not always
@@ -130,30 +153,36 @@ for (i in 1:3){
     xlab("daily mean obs") + 
     ylab("redisuals (forecast - obs)")
   
-  # offset method
-  p3 <- ggplot(data = offset, aes(y = get(var.name.obs[i]), x = get(paste("interp.",var.name[i], sep = "")))) +
-    geom_point(aes(color = "hourly spline"), alpha = alpha) + 
-    geom_point(aes(y = get(var.name.obs[i]), x = get(paste(var.name[i],".interp.ds", sep = "")), color = "hourly offset + spline"), alpha = alpha) + 
-    geom_smooth(method = "lm", se = FALSE, color = "black", formula = my.formula) +
-    stat_poly_eq(formula = my.formula, 
-                 aes(y = get(var.name.obs[i]), x = get(paste(var.name[i],".interp.ds", sep = "")), label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-                 parse = TRUE) +
-    ylab("original obs") + 
-    xlab("splined or spline + offset") +
-    scale_colour_brewer(palette = "Set1") +
-    ggtitle(paste("spline and offset:", vars.title.list[i])) + 
-    theme(legend.position="bottom")
+  # # offset method
+  # p3 <- ggplot(data = offset, aes(y = get(var.name.obs[i]), x = get(paste("interp.",var.name[i], sep = "")))) +
+  #   geom_point(aes(color = "hourly spline"), alpha = alpha) + 
+  #   geom_point(data = offset, aes(y = get(var.name.obs[i]), x = get(paste(var.name[i],".interp.ds", sep = "")), color = "hourly offset + spline + spatial downscaling"), alpha = alpha) + 
+  #   geom_smooth(method = "lm", se = FALSE, color = "black", formula = my.formula) +
+  #   stat_poly_eq(formula = my.formula, 
+  #                aes(y = get(var.name.obs[i]), x = get(paste(var.name[i],".interp.ds", sep = "")), label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+  #                parse = TRUE) +
+  #   ylab("original obs") + 
+  #   xlab("splined or spline + offset") +
+  #   scale_colour_brewer(palette = "Set1") +
+  #   ggtitle(paste("spline and offset:", vars.title.list[i])) + 
+  #   theme(legend.position="bottom")
+  # 
+  # p4 <- ggplot() +
+  #   geom_point(data = offset, aes(y = get(var.name.obs[i]) - get(paste("interp.",var.name[i], sep = "")), x = get(paste("interp.",var.name[i], sep = "")), color = "residuals: hourly spline"), alpha = alpha) +
+  #   geom_point(data = offset, aes(y = get(var.name.obs[i]) - get(paste(var.name[i],".interp.ds", sep = "")), x = get(paste(var.name[i],".interp.ds", sep = "")), color = "residuals: offset "), alpha = alpha) + 
+  #   scale_colour_brewer(palette = "Set1") +
+  #   ggtitle(paste("residuals vs obs:", vars.title.list[i])) + 
+  #   theme(legend.position="bottom") + 
+  #   xlab("daily mean obs") + 
+  #   ylab("redisuals (forecast - obs)")
+  start_day = 280
+  end_day = 284
+  p3 <- ggplot(data = offset %>% filter(doy <=end_day & doy >= start_day)) +
+    geom_line(aes(x = doy, y = AirTC_Avg, color = "observations")) + 
+    geom_line(aes(x = doy, y = temp.interp.ds, color = "downscaled", group = interaction(NOAA.member, dscale.member)))
+  print(p3)
   
-  p4 <- ggplot() +
-    geom_point(data = offset, aes(y = get(var.name.obs[i]) - get(paste("interp.",var.name[i], sep = "")), x = get(paste("interp.",var.name[i], sep = "")), color = "residuals: hourly spline"), alpha = alpha) +
-    geom_point(data = offset, aes(y = get(var.name.obs[i]) - get(paste(var.name[i],".interp.ds", sep = "")), x = get(paste(var.name[i],".interp.ds", sep = "")), color = "residuals: offset "), alpha = alpha) + 
-    scale_colour_brewer(palette = "Set1") +
-    ggtitle(paste("residuals vs obs:", vars.title.list[i])) + 
-    theme(legend.position="bottom") + 
-    xlab("daily mean obs") + 
-    ylab("redisuals (forecast - obs)")
-  
-  png(paste("./p1.2.3.4.",var.name[i], ".png", sep = ""), width = 1024, height = 768)
+  png(paste("./daily.downscale.spline.offset.1.2.3.4.",var.name[i], ".png", sep = ""), width = 1024, height = 768)
   grid.arrange(p1, p2, p3, p4, ncol = 2, nrow = 2)
   dev.off()
   # readPNG(source = paste(paste("./p1.2.3.4.",var.name[i], ".png", sep = "")))
