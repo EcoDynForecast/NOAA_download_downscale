@@ -31,24 +31,25 @@ library(formattable)
 path.working <- "/Users/laurapuckett/Documents/Research/Fall 2018/"
 setwd(path.working)
 path.my.files <- paste(path.working, "/my_files/",sep = "")
-NOAA.flux <- readRDS(paste(path.working, "my_files/","NOAA.flux.forecasts.10.17", sep = ""))
-NOAA.state <- readRDS(paste(path.working, "my_files/","NOAA.state.forecasts.10.17", sep = ""))
+NOAA.flux <- readRDS(paste(path.working, "my_files/","NOAA.flux.forecasts", sep = ""))
+NOAA.state <- readRDS(paste(path.working, "my_files/","NOAA.state.forecasts", sep = ""))
 NOAA.data = inner_join(NOAA.flux, NOAA.state, by = c("forecast.date.hour","ensembles"))
-obs.data <- read.csv(paste(path.working, "my_files/", "FCRmet.10.17.csv", sep = ""),header = TRUE)
+obs.data <- read.csv(paste(path.working, "my_files/", "FCRmet.csv", sep = ""),header = TRUE) %>%
+  dplyr::mutate(AirTC_Avg = ifelse(AirTC_Avg > 44, NA, AirTC_Avg)) # get rid of really high temp values that are sensor malfunction
 
 setwd(path.my.files)
 source("match_units.R")
 source("agg_and_join.R")
-# source("debias_and_add_error.R")
 source("spline_NOAA_offset.R")
-source("plot_spline.R")
+source("new_spline_NOAA_offset.R")
 source("new.plot_spline.R")
 source("summary_plottting.R")
 source("debias_and_add_error.R")
+source("daily_debias_and_add_error.R")
 forecast.units.match = match_units(obs.data, NOAA.data)[[2]]
 forecast.units.match[,"group.num"] = row(forecast.units.match)[,1]
 obs.units.match = match_units(obs.data, NOAA.data)[[1]] %>%
-   mutate(doy_minutes = doy,
+   dplyr::mutate(doy_minutes = doy,
           doy = formattable(ifelse(minute == 0, round(yday + hour/24,4),NA),4))
 joined.data.original <- agg_and_join(obs.units.match, forecast.units.match) %>%
   mutate(yday = yday(timestamp))
@@ -192,15 +193,14 @@ for (i in 1:3){
 # dev.off()
 
 
-  start_day = 220
-  end_day = 230
+  start_day = 190
+  end_day = 200
   ggplot() +
     geom_line(data = offset %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = get(paste("interp.",var.name[i], sep = "")), color = "ds + splined NOAA", group = interaction(NOAA.member,dscale.member)), alpha = alpha) + 
     geom_line(data = offset %>% filter(doy <= end_day & doy >= start_day), aes(x = doy, get(paste(var.name[i],".interp", ".ds",sep = "")), color = "ds + splined + offset", group = interaction(NOAA.member, dscale.member)), alpha = alpha) + 
     scale_colour_brewer(palette = "Set1") + 
     geom_line(data = offset %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = get(var.name.obs[i]), color = "observations"), alpha = 1, size = 2) +
     ylab(paste(var.name[i]))
-
 
 # scatter.original(joined.data, var.name[i], plot.title = paste("obs vs NOAA:", vars.title.list[i]))
 

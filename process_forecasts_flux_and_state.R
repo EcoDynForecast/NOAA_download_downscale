@@ -26,7 +26,7 @@
 rm(list = ls())
 library(lubridate)
 library(dplyr)
-data.path = "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/SCCData-noaa-data-10-17/"
+data.path = "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/SCCData-noaa-data/"
 forecast.files.list = list.files(data.path)
 num.ensembles = 21
 st <- as.Date("2018-04-23") # start of available data
@@ -83,7 +83,7 @@ state.forecasts <- state.forecasts %>%
            "rh2m" = "relative_humidity",
            "vgrd10m" = "northward_wind",
            "ugrd10m" = "eastward_wind"))
-saveRDS(flux.forecasts, file = paste(path.working,"NOAA.flux.forecasts.10.17", sep = ""))
-saveRDS(state.forecasts, file = paste(path.working,"NOAA.state.forecasts.10.17", sep = ""))
+saveRDS(flux.forecasts, file = paste(path.working,"NOAA.flux.forecasts", sep = ""))
+saveRDS(state.forecasts, file = paste(path.working,"NOAA.state.forecasts", sep = ""))
 
 
