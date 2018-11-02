@@ -52,24 +52,19 @@ obs.units.match = match_units(obs.data, NOAA.data)[[1]] %>%
    dplyr::mutate(doy_minutes = doy,
           doy = formattable(ifelse(minute == 0, round(yday + hour/24,4),NA),4))
 joined.data.original <- agg_and_join(obs.units.match, forecast.units.match) %>%
-  mutate(yday = yday(timestamp)) %>%
-  dplyr::group_by(NOAA.member, yday) %>%
-  dplyr::mutate(temp.for = ifelse(n() == 4, temp.for, NA), # force NA for days without 4 NOAA entries
-                RH.for = ifelse(n() == 4, RH.for, NA),
-                ws.for = ifelse(n() == 4, ws.for, NA)) %>%
-  ungroup()
+  mutate(yday = yday(timestamp))
 
 joined.data.daily <- joined.data.original %>%
   dplyr::group_by(NOAA.member, yday) %>%
   dplyr::summarize(temp.obs = mean(temp.obs), # getting daily means from minute or 6-hourly
-                   RH.obs = ifelse(n() == 4, mean(RH.obs), NA),
-                   ws.obs = ifelse(n() == 4, mean(ws.obs), NA),
+                   RH.obs = mean(RH.obs),
+                   ws.obs = mean(ws.obs),
                    temp.for = ifelse(n() == 4, mean(temp.for), NA), # force mean is NA if missing data
-                   RH.for = mean(RH.for),
-                   ws.for = mean(ws.for),
+                   RH.for = ifelse(n() == 4, mean(RH.for), NA),
+                   ws.for = ifelse(n() == 4, mean(ws.for), NA),
                    doy = formattable(first(yday),4)) %>%
   ungroup() %>%
-  filter(is.na(temp.for) == FALSE & is.na(RH.for) == FALSE && is.na(ws.for) == FALSE)
+  filter(is.na(temp.for) == FALSE && is.na(RH.for) == FALSE && is.na(ws.for) == FALSE)
 
 joined.data <- joined.data.daily
 joined.data[,"group.num"] = row(joined.data)[,1]
@@ -175,13 +170,8 @@ for (i in 1:3){
   
   # get R2 for various steps
   print("6 hourly")
-  formula = joined.data.original$temp.obs ~ joined.data.original$temp.for
-  summary(lm(formula = formula))$r.squared
   print("daily aggregate")
-  formula = joined.data.daily$temp.obs ~ joined.data.daily$temp.for
-  summary(lm(formula = formula))$r.squared
   print("daily aggregate debiased + noise + spline + offset")
-  formula = debiased.with.noise$temp.mod.noise ~ debiased.with.noise$
   print("daily aggregate debiased + spline")
   print("daily aggregate debiased + spline + offset")
   
@@ -233,4 +223,4 @@ for (i in 1:3){
 
 # scatter.original(joined.data, var.name[i], plot.title = paste("obs vs NOAA:", vars.title.list[i]))
 
-# need to figure out what changed from last version to this one for r2 of temp daily aggregate to drop from 0.9 to 0.68
+# interp.temp is NA but temp.interp.ds still have values: need to fix this.
