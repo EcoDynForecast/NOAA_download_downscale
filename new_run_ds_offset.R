@@ -70,10 +70,12 @@ joined.data[,"group.num"] = row(joined.data)[,1]
 debiased.results <- daily_debias_and_add_error(joined.data, nmembers = 10)
 debiased <- debiased.results[[1]]
 debiased.with.noise <- debiased.results[[2]] %>%
-  mutate(yday = as.integer(doy))
+  ungroup() %>%
+  mutate(yday = as.integer(doy)) %>%
+  select(-doy)
 
 NOAA.prop <- joined.data.original %>%
-  dplyr::group_by(NOAA.member, doy) %>%
+  dplyr::group_by(NOAA.member, yday) %>%
   dplyr::mutate(temp.for.mean = mean(temp.for),
                 RH.for.mean = mean(RH.for),
                 ws.for.mean = mean(ws.for)) %>%
@@ -84,13 +86,13 @@ NOAA.prop <- joined.data.original %>%
   select(NOAA.member, timestamp, doy, yday,temp.for, RH.for, ws.for, temp.for.mean, RH.for.mean, ws.for.mean, temp.prop, RH.prop, ws.prop)
 
 # redistributed = 166 days * 21 NOAA members * 4 meas/day * 10 noise members
-redistributed <- inner_join(debiased.with.noise, NOAA.prop, by = c("doy","NOAA.member")) %>%
+redistributed <- inner_join(debiased.with.noise, NOAA.prop, by = c("yday","NOAA.member")) %>%
   dplyr::group_by(NOAA.member, doy) %>%
   dplyr::mutate(ds.temp = temp.mod.noise * temp.prop,
                 ds.RH = RH.mod.noise * RH.prop,
                 ds.ws = ws.mod.noise * ws.prop) %>%
   ungroup() %>%
-  select(NOAA.member, yday, dscale.member, ds.temp, ds.RH, ds.ws)
+  select(NOAA.member, doy, yday, dscale.member, ds.temp, ds.RH, ds.ws)
 
 splined.ds <- new_spline_NOAA_offset(redistributed) %>%
   mutate(doy = formattable(round(doy,4),4))
@@ -175,11 +177,11 @@ for (i in 1:3){
   #   theme(legend.position="bottom") + 
   #   xlab("daily mean obs") + 
   #   ylab("redisuals (forecast - obs)")
-  start_day = 280
-  end_day = 284
+  start_day = 240
+  end_day = 250
   p3 <- ggplot(data = offset %>% filter(doy <=end_day & doy >= start_day)) +
-    geom_line(aes(x = doy, y = AirTC_Avg, color = "observations")) + 
-    geom_line(aes(x = doy, y = temp.interp.ds, color = "downscaled", group = interaction(NOAA.member, dscale.member)))
+    geom_line(aes(x = doy, y = temp.interp.ds, color = "downscaled", group = interaction("NOAA.member", "dscale.member"))) + 
+    geom_line(aes(x = doy, y = AirTC_Avg, color = "observations"))
   print(p3)
   
   png(paste("./daily.downscale.spline.offset.1.2.3.4.",var.name[i], ".png", sep = ""), width = 1024, height = 768)
@@ -191,11 +193,13 @@ for (i in 1:3){
 
 
   start_day = 220
-  end_day = 223
+  end_day = 230
   ggplot() +
-    geom_line(data = offset %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = AirTC_Avg, color = "observations"), alpha = alpha) + 
-    geom_line(data = offset %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = interp.temp, color = "splined NOAA", group = NOAA.member), alpha = alpha) + 
-    geom_line(data = offset %>% filter(doy <= end_day & doy >= start_day), aes(x = doy, y = temp.interp.ds, color = "ds + splined", group = NOAA.member), alpha = alpha)
+    geom_line(data = offset %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = get(paste("interp.",var.name[i], sep = "")), color = "ds + splined NOAA", group = interaction(NOAA.member,dscale.member)), alpha = alpha) + 
+    geom_line(data = offset %>% filter(doy <= end_day & doy >= start_day), aes(x = doy, get(paste(var.name[i],".interp", ".ds",sep = "")), color = "ds + splined + offset", group = interaction(NOAA.member, dscale.member)), alpha = alpha) + 
+    scale_colour_brewer(palette = "Set1") + 
+    geom_line(data = offset %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = get(var.name.obs[i]), color = "observations"), alpha = 1, size = 2) +
+    ylab(paste(var.name[i]))
 
 
 # scatter.original(joined.data, var.name[i], plot.title = paste("obs vs NOAA:", vars.title.list[i]))
