@@ -59,7 +59,7 @@ joined.data.daily <- joined.data.original %>%
   dplyr::summarize(temp.obs = mean(temp.obs), # getting daily means from minute or 6-hourly
                    RH.obs = mean(RH.obs),
                    ws.obs = mean(ws.obs),
-                   temp.for = ifelse(n() == 4, mean(temp.for), NA), # mean is NA if missing data
+                   temp.for = ifelse(n() == 4, mean(temp.for), NA), # force mean is NA if missing data
                    RH.for = ifelse(n() == 4, mean(RH.for), NA),
                    ws.for = ifelse(n() == 4, mean(ws.for), NA),
                    doy = formattable(first(yday),4)) %>%
@@ -94,9 +94,21 @@ redistributed <- inner_join(debiased.with.noise, NOAA.prop, by = c("yday","NOAA.
                 ds.ws = ws.mod.noise * ws.prop) %>%
   ungroup() %>%
   select(NOAA.member, doy, yday, dscale.member, ds.temp, ds.RH, ds.ws)
+# get list of days that have NAs for forecasts
+imcomplete.days <- redistributed %>% 
+  filter(is.na(ds.temp) | is.na(ds.ws) | is.na(ds.RH)) %>% 
+  select(doy) %>% 
+  mutate(doy = as.integer(doy)) %>% 
+  unique()
 
 splined.ds <- new_spline_NOAA_offset(redistributed) %>%
-  mutate(doy = formattable(round(doy,4),4))
+  mutate(doy = formattable(round(doy,4),4)) %>%
+  # adjust days where NOAA data was NA
+  mutate(interp.temp = ifelse(doy %in% imcomplete.days$doy,NA, interp.temp),
+         interp.ws = ifelse(doy %in% imcomplete.days$doy,NA, interp.ws),
+         interp.RH = ifelse(doy %in% imcomplete.days$doy,NA, interp.RH))
+
+
 joined.obs.and.spline <- inner_join(obs.units.match, splined.ds, by = "doy")
 
 offset <- joined.obs.and.spline %>%
@@ -193,8 +205,8 @@ for (i in 1:3){
 # dev.off()
 
 
-  start_day = 190
-  end_day = 200
+  start_day = 120
+  end_day = 130
   ggplot() +
     geom_line(data = offset %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = get(paste("interp.",var.name[i], sep = "")), color = "ds + splined NOAA", group = interaction(NOAA.member,dscale.member)), alpha = alpha) + 
     geom_line(data = offset %>% filter(doy <= end_day & doy >= start_day), aes(x = doy, get(paste(var.name[i],".interp", ".ds",sep = "")), color = "ds + splined + offset", group = interaction(NOAA.member, dscale.member)), alpha = alpha) + 
@@ -204,4 +216,4 @@ for (i in 1:3){
 
 # scatter.original(joined.data, var.name[i], plot.title = paste("obs vs NOAA:", vars.title.list[i]))
 
-
+# interp.temp is NA but temp.inter.ds still have values: need to fix this.
