@@ -52,21 +52,22 @@ obs.units.match = match_units(obs.data, NOAA.data)[[1]] %>%
    dplyr::mutate(doy_minutes = doy,
           doy = formattable(ifelse(minute == 0, round(yday + hour/24,4),NA),4))
 joined.data.original <- agg_and_join(obs.units.match, forecast.units.match) %>%
-  mutate(yday = yday(timestamp)) %>%
-  dplyr::group_by(NOAA.member, yday) %>%
-  dplyr::mutate(temp.for = ifelse(n() == 4, temp.for, NA), # force NA for days without 4 NOAA entries
-                RH.for = ifelse(n() == 4, RH.for, NA),
-                ws.for = ifelse(n() == 4, ws.for, NA)) %>%
+  mutate(yday = yday(timestamp))  %>%
+  dplyr::group_by(NOAA.member, yday)  %>%
+  dplyr::mutate(n = n(),
+                temp.for = ifelse(n == 4, temp.for, NA), # force NA for days without 4 NOAA entries
+                RH.for = ifelse(n == 4, RH.for, NA),
+                ws.for = ifelse(n == 4, ws.for, NA)) %>%
   ungroup()
 
 joined.data.daily <- joined.data.original %>%
   dplyr::group_by(NOAA.member, yday) %>%
-  dplyr::summarize(temp.obs = mean(temp.obs), # getting daily means from minute or 6-hourly
-                   RH.obs = ifelse(n() == 4, mean(RH.obs), NA),
-                   ws.obs = ifelse(n() == 4, mean(ws.obs), NA),
-                   temp.for = ifelse(n() == 4, mean(temp.for), NA), # force mean is NA if missing data
-                   RH.for = mean(RH.for),
-                   ws.for = mean(ws.for),
+  dplyr::summarize(temp.obs = mean(temp.obs, na.rm = FALSE), # getting daily means from minute or 6-hourly
+                   RH.obs = mean(RH.obs, na.rm = FALSE),
+                   ws.obs = mean(ws.obs, na.rm = FALSE),
+                   temp.for = mean(temp.for, na.rm = FALSE), # force mean is NA if missing data
+                   RH.for = mean(RH.for, na.rm = FALSE),
+                   ws.for = mean(ws.for, na.rm = FALSE),
                    doy = formattable(first(yday),4)) %>%
   ungroup() %>%
   filter(is.na(temp.for) == FALSE & is.na(RH.for) == FALSE && is.na(ws.for) == FALSE)
@@ -118,7 +119,7 @@ joined.obs.and.spline <- inner_join(obs.units.match, splined.ds, by = "doy")
 
 offset <- joined.obs.and.spline %>%
   dplyr::mutate(doy.group = floor(doy)) %>%
-  dplyr::group_by(NOAA.member, doy.group) %>% 
+  dplyr::group_by(NOAA.member, dscale.member, doy.group) %>% 
   dplyr::mutate(temp.offset = ifelse(hour == 4,interp.temp - AirTC_Avg, NA),
                 temp.interp.ds = ifelse(hour >= 4, interp.temp - max(temp.offset, na.rm = TRUE), AirTC_Avg),
                 ws.offset = ifelse(hour == 4, interp.ws - WS_ms_Avg, NA),
@@ -129,7 +130,7 @@ offset <- joined.obs.and.spline %>%
   
   
 ## above is hack to select offset at 4am only, and use that value to adjust values for each group starting at 4am,
-## below is an older, simpler version of this that doesn't take into account missing data - just selects 5th element of group, which is not always
+## below is an older, simpler version of this that doesn't take into account missing data - just selects 5th element of group, which is not always 4am
 ## 
 
   # dplyr::mutate(temp.offset = interp.temp[5] - AirTC_Avg[5],
