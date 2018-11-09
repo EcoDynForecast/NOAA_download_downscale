@@ -121,7 +121,7 @@ start_day = 0
 end_day = 365
 ggplot() +
   geom_line(data = joined.data.daily %>% filter(yday <=end_day & yday >= start_day), aes(x = yday, y = temp.obs, color = "observations")) +
-  geom_line(data = debiased %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = temp.mod, color = "downscaled + spatially debiased", group = NOAA.member)) + 
+  geom_point(data = debiased %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = temp.mod, color = "downscaled + spatially debiased", group = NOAA.member)) + 
   scale_color_brewer(palette = "Set1") +
   ylab("Temperature [C]") +
   xlab("day of year") +
@@ -129,7 +129,7 @@ ggplot() +
 
 ggplot() +
   geom_line(data = joined.data.daily %>% filter(yday <=end_day & yday >= start_day), aes(x = yday, y = temp.obs, color = "observations")) +
-  geom_line(data = debiased.with.noise %>% filter(yday <=end_day & yday >= start_day), aes(x = yday, y = temp.mod, color = "downscaled + spatially debiased", group = interaction(NOAA.member,dscale.member))) + 
+  geom_point(data = debiased.with.noise %>% filter(yday <=end_day & yday >= start_day), aes(x = yday, y = temp.mod, color = "downscaled + spatially debiased", group = interaction(NOAA.member,dscale.member))) + 
   scale_color_brewer(palette = "Set1") +
   ylab("Temperature [C]") +
   xlab("day of year") +
@@ -196,11 +196,12 @@ ggplot(data = inner_join(redistributed.noise, obs.units.match, by = c("doy")), a
   ggtitle("Temperature comparison with added noise") +
   scale_color_brewer(palette = "Set1") +
   theme(legend.position="bottom", text = element_text(size=15))
+
 start_day = 200
 end_day = 210
 ggplot() +
+    geom_line(data = obs.units.match %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = AirTC_Avg, color = "observations"), size = 1.5) +
   geom_point(data = redistributed %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = ds.temp, group = NOAA.member, color = "debiased forecast redistributed")) +
-  geom_line(data = obs.units.match %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = AirTC_Avg, color = "observations")) +
   scale_color_brewer(palette = "Set1") +
   ylab("Temperature [C]") +
   xlab("day of year") +
@@ -208,8 +209,8 @@ ggplot() +
   ggtitle("Temperature comparison no noise")
 
 ggplot() +
+    geom_line(data = obs.units.match %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = AirTC_Avg, color = "observations"), size = 1.5) +
   geom_point(data = redistributed.noise %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = ds.temp, group = NOAA.member, color = "debiased forecast redistributed")) +
-  geom_line(data = obs.units.match %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = AirTC_Avg, color = "observations")) +
   scale_color_brewer(palette = "Set1") +
   ylab("Temperature [C]") +
   xlab("day of year") +
@@ -267,23 +268,25 @@ start_day = 200
 end_day = 210
 ggplot(data = joined.obs.and.spline %>% filter(doy <=end_day & doy >= start_day)) +
   geom_line(aes(x = doy, y = interp.temp, group = interaction(NOAA.member), color = "debiased forecast"), alpha = 0.5) +
-  geom_line(aes(x = doy, y = AirTC_Avg, color = "observations")) +
-  scale_color_brewer(palette = "Set1")
+  geom_line(aes(x = doy, y = AirTC_Avg, color = "observations"), size = 1.5) +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position="bottom", text = element_text(size=15))
 
 ggplot(data = joined.obs.and.spline.noise %>% filter(doy <=end_day & doy >= start_day)) +
   geom_line(aes(x = doy, y = interp.temp, group = interaction(NOAA.member,dscale.member), color = "debiased forecast"), alpha = 0.5) +
-  geom_line(aes(x = doy, y = AirTC_Avg, color = "observations")) +
-  scale_color_brewer(palette = "Set1")
+  geom_line(aes(x = doy, y = AirTC_Avg, color = "observations"), size = 1.5) +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position="bottom", text = element_text(size=15))
 ```
 
-``` {r apply offset (but not to ws)}
+```{r apply offset (but not to ws)}
 offset <- joined.obs.and.spline %>%
   dplyr::mutate(doy.group = floor(doy)) %>%
   dplyr::group_by(NOAA.member, dscale.member, doy.group) %>% 
   dplyr::mutate(temp.offset = ifelse(hour == 4,interp.temp - AirTC_Avg, NA),
                 temp.interp.ds = ifelse(hour >= 4, interp.temp - max(temp.offset, na.rm = TRUE), AirTC_Avg),
                 ws.offset = 0, # not doing offset for ws
-                ws.interp.ds = ifelse(interp.ws - max(ws.offset, na.rm = TRUE),WS_ms_Avg),
+                ws.interp.ds = ifelse(hour >= 4, interp.ws - max(ws.offset, na.rm = TRUE),WS_ms_Avg),
                 RH.offset = ifelse(hour == 4, interp.RH - RH, NA),
                 RH.interp.ds = ifelse(hour >= 4, interp.RH - max(RH.offset, na.rm = TRUE),RH)) %>%
   ungroup()
@@ -327,9 +330,15 @@ summary(lm(formula = formula))$r.squared
 #   theme(legend.position="bottom", text = element_text(size=15))
 
 ggplot(data = offset %>% filter(doy <=end_day & doy >= start_day)) +
-  geom_line(aes(x = doy, y = AirTC_Avg)) +
-  geom_line(aes(x = doy, y = temp.interp.ds, group = NOAA.member))
-  
+  geom_line(aes(x = doy, y = AirTC_Avg, color = "observations"), size = 1.5) +
+  geom_line(aes(x = doy, y = temp.interp.ds, group = NOAA.member, color = "downscaled forecasts + offset")) +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position="bottom", text = element_text(size=15))
+ggplot(data = offset.noise %>% filter(doy <=end_day & doy >= start_day)) +
+  geom_line(aes(x = doy, y = AirTC_Avg, color = "observations"), size = 1.5) +
+  geom_line(aes(x = doy, y = temp.interp.ds, group = interaction(NOAA.member,dscale.member), color = "downscaled forecasts + offset")) +
+  scale_color_brewer(palette = "Set1") +
+  theme(legend.position="bottom", text = element_text(size=15))
   
 ```
 
