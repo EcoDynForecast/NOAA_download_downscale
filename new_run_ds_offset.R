@@ -60,6 +60,18 @@ joined.data.original <- agg_and_join(obs.units.match, forecast.units.match) %>%
                 ws.for = ifelse(n == 4, ws.for, NA)) %>%
   ungroup()
 
+ggplot(data = joined.data.original,aes(x = temp.for, y = temp.obs)) +
+  geom_point(alpha = 0.8, color = "darkolivegreen4", size = .8) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", formula = y~x) +
+  stat_poly_eq(formula = y~x, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE) +
+  xlab("NOAA Forecast") +
+  ylab("Site Observations") +
+  ggtitle("Temperature [C], 6-Hourly Measurements Comparison") + 
+  theme(text = element_text(size=15))
+
+
 joined.data.daily <- joined.data.original %>%
   dplyr::group_by(NOAA.member, yday) %>%
   dplyr::summarize(temp.obs = mean(temp.obs, na.rm = FALSE), # getting daily means from minute or 6-hourly
@@ -72,6 +84,27 @@ joined.data.daily <- joined.data.original %>%
   ungroup() %>%
   filter(is.na(temp.for) == FALSE & is.na(RH.for) == FALSE && is.na(ws.for) == FALSE)
 
+ggplot(data = joined.data.daily,aes(x = temp.for, y = temp.obs)) +
+  geom_point(alpha = 0.8, color = "darkolivegreen4", size = .8) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", formula = y~x) +
+  stat_poly_eq(formula = y~x, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE) +
+  xlab("NOAA Forecast") +
+  ylab("Site Observations") +
+  ggtitle("Temperature [C], Daily Measurements Comparison") + 
+  theme(text = element_text(size=15))
+
+start_day = 0
+end_day = 365
+ggplot(data = joined.data.daily %>% filter(yday <=end_day & yday >= start_day)) +
+  geom_line(aes(x = yday, y = temp.obs, color = "observations")) +
+  geom_line(aes(x = yday, y = temp.for, color = "downscaled", group = NOAA.member)) + 
+  scale_color_brewer(palette = "Set1") +
+  ylab("Temperature [C]") +
+  xlab("day of year") +
+  theme(legend.position="bottom", text = element_text(size=15))
+
 joined.data <- joined.data.daily
 joined.data[,"group.num"] = row(joined.data)[,1]
 debiased.results <- daily_debias_and_add_error(joined.data, nmembers = 10)
@@ -80,6 +113,17 @@ debiased.with.noise <- debiased.results[[2]] %>%
   ungroup() %>%
   mutate(yday = as.integer(doy)) %>%
   select(-doy)
+
+start_day = 0
+end_day = 365
+ggplot() +
+  geom_line(data = joined.data.daily %>% filter(yday <=end_day & yday >= start_day), aes(x = yday, y = temp.obs, color = "observations")) +
+  geom_line(data = debiased %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = temp.mod, color = "downscaled + spatially debiased", group = NOAA.member)) + 
+  scale_color_brewer(palette = "Set1") +
+  ylab("Temperature [C]") +
+  xlab("day of year") +
+  theme(legend.position="bottom", text = element_text(size=15))
+
 
 NOAA.prop <- joined.data.original %>%
   dplyr::group_by(NOAA.member, yday) %>%
@@ -92,7 +136,21 @@ NOAA.prop <- joined.data.original %>%
          ws.prop = ws.for/ws.for.mean) %>%
   select(NOAA.member, timestamp, doy, yday,temp.for, RH.for, ws.for, temp.for.mean, RH.for.mean, ws.for.mean, temp.prop, RH.prop, ws.prop)
 
+joined.obs.and.NOAA.prop <- inner_join(obs.units.match, NOAA.prop, by = "doy")
+
+start_day = 280
+end_day = 300
+ggplot() +
+  geom_line(data = obs.units.match %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = AirTC_Avg, color = "observations")) +
+  geom_point(data = NOAA.prop %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = temp.for, color = "downscaled + spatially debiased + redistributed", group = NOAA.member)) + 
+  scale_color_brewer(palette = "Set1") +
+  ylab("Temperature [C]") +
+  xlab("day of year") +
+  theme(legend.position="bottom", text = element_text(size=15))
+
 # redistributed = 166 days * 21 NOAA members * 4 meas/day * 10 noise members
+
+
 redistributed <- inner_join(debiased.with.noise, NOAA.prop, by = c("yday","NOAA.member")) %>%
   dplyr::group_by(NOAA.member, doy) %>%
   dplyr::mutate(ds.temp = temp.mod.noise * temp.prop,
@@ -106,6 +164,9 @@ imcomplete.days <- redistributed %>%
   select(doy) %>% 
   mutate(doy = as.integer(doy)) %>% 
   unique()
+
+
+
 
 splined.ds <- new_spline_NOAA_offset(redistributed) %>%
   mutate(doy = formattable(round(doy,4),4)) %>%
@@ -155,14 +216,15 @@ for (i in 1:3){
     geom_point(aes(col = "debiased"), alpha = alpha) +
     geom_abline(aes(y = get(paste(var.name[i],".mod", sep = "")), x = get(paste(var.name[i],".obs", sep = ""))), slope = 1, intercept = 0, col = "red") +
     geom_smooth(method = "lm", se = FALSE, color = "black", formula = my.formula) +
-    stat_poly_eq(formula = my.formula, 
-                 aes(y = get(paste(var.name[i],".obs", sep = "")), x = get(paste(var.name[i],".mod", sep = "")), label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-                 parse = TRUE) +
-    ylab(" daily mean obs") + 
-    xlab("daily mean NOAA (original or debiased)") +
+    # stat_poly_eq(formula = my.formula, 
+    #              aes(y = get(paste(var.name[i],".obs", sep = "")), x = get(paste(var.name[i],".mod", sep = "")), label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+    #              parse = TRUE) +
+    ylab("Site Observations") + 
+    xlab("NOAA forecast (original or debiased)") +
     scale_colour_brewer(palette = "Set1") +
-    ggtitle(paste("daily mean:", vars.title.list[i])) + 
-    theme(legend.position="bottom")
+    ggtitle(paste("Debiasing Daily Mean,", vars.title.list[i])) + 
+    theme(legend.position="bottom", text = element_text(size=15))
+  print(p1)
   
   # residuals from daily comparison
   p2 <- ggplot() +
