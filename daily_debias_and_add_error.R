@@ -1,8 +1,8 @@
 daily_debias_and_add_error <- function(joined.data, nmembers){
-
+  
   # End Goal: plot NOAA ensembles vs downscaled NOAA ensemble members
   
-
+  
   lin.mod <- function(col.obs, col.for){
     model = lm(col.obs ~ col.for)
     slope = model$coefficients[2]
@@ -20,30 +20,31 @@ daily_debias_and_add_error <- function(joined.data, nmembers){
   temp.res.sd = lm.res.sd(joined.data$temp.obs, joined.data$temp.for)
   RH.res.sd = lm.res.sd(joined.data$RH.obs, joined.data$RH.for)
   ws.res.sd = lm.res.sd(joined.data$ws.obs, joined.data$ws.for)
+  sw.res.sd = lm.res.sd(joined.data$sw.obs, joined.data$sw.for)
   
   debiased <- joined.data %>% 
     dplyr::mutate(temp.mod =  lin.mod(joined.data$temp.obs, joined.data$temp.for),
-           RH.mod =  lin.mod(joined.data$RH.obs, joined.data$RH.for),
-           ws.mod =  lin.mod(joined.data$ws.obs, joined.data$ws.for)) %>% 
-    select(group.num, doy, NOAA.member, temp.mod, RH.mod, ws.mod)
+                  RH.mod =  lin.mod(joined.data$RH.obs, joined.data$RH.for),
+                  ws.mod =  lin.mod(joined.data$ws.obs, joined.data$ws.for),
+                  sw.mod =  lin.mod(joined.data$sw.obs, joined.data$sw.for)) %>% 
+    select(group.num, doy, NOAA.member, temp.mod, RH.mod, ws.mod, sw.mod)
   
-# 
+  # 
   debiased.with.noise <- debiased %>%
-    group_by(group.num, doy, NOAA.member, temp.mod, RH.mod,  ws.mod) %>%
+    group_by(group.num, doy, NOAA.member, temp.mod, RH.mod,  ws.mod, sw.mod) %>%
     expand(dscale.member = 1:nmembers) %>%
     ungroup() %>%
-    group_by(dscale.member, group.num, doy, NOAA.member, temp.mod, RH.mod,  ws.mod) %>%
+    group_by(dscale.member, group.num, doy, NOAA.member, temp.mod, RH.mod,  ws.mod, sw.mod) %>%
     dplyr::mutate(temp.mod.noise = temp.mod + rnorm(mean = 0, sd = temp.res.sd, n = 1),
-           RH.mod.noise = RH.mod + rnorm(mean = 0, sd = RH.res.sd, n = 1),
-           ws.mod.noise = ws.mod + rnorm(mean = 0, sd = ws.res.sd, n = 1)) %>%
-    select(dscale.member, group.num, doy, NOAA.member, temp.mod, temp.mod.noise, RH.mod, RH.mod.noise, ws.mod, ws.mod.noise)
+                  RH.mod.noise = RH.mod + rnorm(mean = 0, sd = RH.res.sd, n = 1),
+                  ws.mod.noise = ws.mod + rnorm(mean = 0, sd = ws.res.sd, n = 1),
+                  sw.mod.noise = sw.mod + rnorm(mean = 0, sd = sw.res.sd, n = 1)) %>%
+    select(dscale.member, group.num, doy, NOAA.member, temp.mod, temp.mod.noise, RH.mod, RH.mod.noise, ws.mod, ws.mod.noise, sw.mod, sw.mod.noise)
   
-#   debiased.with.noise %>% # TO CHECK ENSEMBLES
+#   debiased.with.noise %>% # To check ensembles for correct noise addition
 #   group_by(doy) %>% 
 # dplyr::summarize(temp = mean(temp.mod),
 #          mean.ensemble = mean(temp.mod.noise))
-  
-  
-  #saveRDS(debiased, file = paste(path.working, "/debiased",sep = ""))
+
   return(list(debiased, debiased.with.noise))
 }
