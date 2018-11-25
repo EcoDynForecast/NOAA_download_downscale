@@ -29,7 +29,7 @@ match_units <- function(obs.data, NOAA.data){
   obs.units.match <- obs.units.match.1 %>% dplyr::mutate(date = as_date(date),
            # doy = yday(timestamp) + hour(timestamp)/24 + minute(timestamp)/(24*60),
            precip_rate = Rain_mm_Tot/60) %>%
-    select(timestamp, AirTC_Avg, RH, WS_ms_Avg, SR01Dn_Avg, IR01UpCo_Avg, precip_rate) 
+    select(timestamp, AirTC_Avg, RH, WS_ms_Avg, SR01Up_Avg, IR01DnCo_Avg, precip_rate) 
   
   # saveRDS(obs.units.match, file = paste(path.working,"obs.units.match.RData",sep= ""))
   
