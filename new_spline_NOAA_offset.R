@@ -1,21 +1,21 @@
 new_spline_NOAA_offset <- function(redistributed){
   
-  interpolate <- function(doy, var){
-    result <- splinefun(doy, var, method = "monoH.FC")
-    return(result(seq(min(doy),max(doy),1/24)))
+  interpolate <- function(jday, var){
+    result <- splinefun(jday, var, method = "monoH.FC")
+    return(result(seq(min(as.integer(jday)), max(as.integer(jday)), 1/24)))
   }
   
   # for debiased
   by.ens <- redistributed %>% 
     group_by(NOAA.member, dscale.member) %>%
-    mutate(doy = yday)
+    mutate(jday = as.integer(julian(timestamp)) + (1/24) * hour(timestamp))
   
-  interp.df.doy <- by.ens %>% do(doy = seq(min(redistributed$yday), max(redistributed$yday), 1/24))
+  interp.df.jday <- by.ens %>% do(jday = seq(as.integer(min(julian(redistributed$timestamp))), as.integer(max(julian(redistributed$timestamp))), 1/24))
   # possibly add in a timestamp column here
-  interp.df.temp <- do(by.ens, interp.temp = interpolate(.$doy,.$ds.temp))
-  interp.df.ws <- do(by.ens, interp.ws = interpolate(.$doy,.$ds.ws))
-  interp.df.RH <- do(by.ens, interp.RH = interpolate(.$doy,.$ds.RH))
-  interp.df <- inner_join(interp.df.doy, interp.df.temp, by = c("NOAA.member","dscale.member")) %>%
+  interp.df.temp <- do(by.ens, interp.temp = interpolate(.$jday,.$ds.temp))
+  interp.df.ws <- do(by.ens, interp.ws = interpolate(.$jday,.$ds.ws))
+  interp.df.RH <- do(by.ens, interp.RH = interpolate(.$jday,.$ds.RH))
+  interp.df <- inner_join(interp.df.jday, interp.df.temp, by = c("NOAA.member","dscale.member")) %>%
     inner_join(interp.df.ws, by = c("NOAA.member","dscale.member")) %>%
     inner_join(interp.df.RH,  by = c("NOAA.member","dscale.member")) %>%
     unnest()

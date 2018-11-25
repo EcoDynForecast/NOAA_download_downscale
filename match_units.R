@@ -9,12 +9,12 @@ match_units <- function(obs.data, NOAA.data){
   forecast.data <- NOAA.data %>%
       #rename(c("forecast.date" = "date")) %>%
       dplyr::mutate(timestamp = as_datetime(forecast.date.hour, tz = "US/Eastern"),
-                    timestamp = timestamp - 3600) %>% # timezone part is still wrong...hack for now
+                    timestamp = timestamp - 3600) %>% # timezone part is still wrong...temporary hack
     # attributes(forecast.data$timestamp)$tzone <- "US/Eastern"
     # forecast.data <- forecast.data %>%
-      dplyr::mutate(yday = lubridate::yday(as_date(timestamp)),
-                    hour = hour(timestamp),
-                    doy = formattable(round(yday(timestamp) + hour(timestamp)/24,4),4)) %>%
+      # dplyr::mutate(yday = lubridate::yday(as_date(timestamp)),
+       #             hour = hour(timestamp)) %>%
+                    # doy = formattable(round(yday(timestamp) + hour(timestamp)/24,4),4)) %>%
       rename(c("ensembles" = "NOAA.member"))
     
     
@@ -27,13 +27,11 @@ match_units <- function(obs.data, NOAA.data){
   # attributes(obs.units.match.1$timestamp)$tzone <- "US/Eastern" # not sure if this step is required
   
   obs.units.match <- obs.units.match.1 %>% dplyr::mutate(date = as_date(date),
-           doy = yday(timestamp) + hour(timestamp)/24 + minute(timestamp)/(24*60),
+           # doy = yday(timestamp) + hour(timestamp)/24 + minute(timestamp)/(24*60),
            precip_rate = Rain_mm_Tot/60) %>%
-    select(-date.extra, -X, -X.1, -X.2, -X.3, -X.4, -BattV, -PAR_Den_Avg,
-           -PAR_Tot_Tot, -BP_kPa_Avg, -WindDir, -NR01TK_Avg, -Albedo_Avg,
-           -Rain_mm_Tot, -IR01DnCo_Avg, -RECORD) # remove unwanted rows
+    select(timestamp, AirTC_Avg, RH, WS_ms_Avg, SR01Dn_Avg, IR01UpCo_Avg, precip_rate) 
   
-  saveRDS(obs.units.match, file = paste(path.working,"obs.units.match.RData",sep= ""))
+  # saveRDS(obs.units.match, file = paste(path.working,"obs.units.match.RData",sep= ""))
   
   forecast.units.match <- forecast.data %>%
     dplyr::mutate(air_temperature = air_temperature - 273.15, # convert from K to C
@@ -46,7 +44,8 @@ match_units <- function(obs.data, NOAA.data){
              "surface_downwelling_shortwave_flux_in_air" = "avg.sw",
              "precipitation_flux" = "precip.rate",
              "relative_humidity" = "RH",
-             "wind_speed" = "ws"))
-  saveRDS(forecast.units.match, file = paste(path.working,"/forecast.units.match.RData",sep= ""))
+             "wind_speed" = "ws")) %>%
+    select(NOAA.member, timestamp, temp, avg.lw, avg.sw, precip.rate, RH, ws)
+  #bsaveRDS(forecast.units.match, file = paste(path.working,"/forecast.units.match.RData",sep= ""))
   return(list(obs.units.match, forecast.units.match))
 }
