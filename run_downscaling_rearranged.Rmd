@@ -28,7 +28,7 @@ obs.data <- read.csv(paste(path.working, "my_files/", "FCRmet.csv", sep = ""),he
 
 setwd(path.my.files)
 source("match_units.R")
-source("agg_and_join.R")
+# source("agg_and_join.R")
 source("spline_NOAA_offset.R")
 source("new_spline_NOAA_offset.R")
 source("new.plot_spline.R")
@@ -36,6 +36,10 @@ source("summary_plottting.R")
 source("debias_and_add_error.R")
 source("daily_debias_and_add_error.R")
 source("solar_geom.R")
+
+source("daily_debias_coeff.R")
+source("daily_debias_from_coeff.R")
+ADD_NOISE = TRUE
 ```
 
 ```{r prepare datasets}
@@ -43,12 +47,12 @@ forecast.units.match = match_units(obs.data, NOAA.data)[[2]] %>%
     dplyr::group_by(NOAA.member, date(timestamp))  %>%
   # force NA for days without 4 NOAA entries
     dplyr::mutate(n = n(),
-                temp.for = ifelse(n == 4, temp.for, NA), 
-                RH.for = ifelse(n == 4, RH.for, NA),
-                ws.for = ifelse(n == 4, ws.for, NA),
-                avg.sw.for = ifelse(n==4, avg.sw.for, NA),
-                avg.lw.for = ifelse(n==4, avg.lw.for, NA),
-                precip.rate.for = ifelse(n==4, precip.rate.for, NA)) %>%
+                temp = ifelse(n == 4, temp, NA), 
+                RH = ifelse(n == 4, RH, NA),
+                ws = ifelse(n == 4, ws, NA),
+                avg.sw = ifelse(n==4, avg.sw, NA),
+                avg.lw = ifelse(n==4, avg.lw, NA),
+                precip.rate = ifelse(n==4, precip.rate, NA)) %>%
   ungroup()
 obs.units.match = match_units(obs.data, NOAA.data)[[1]]
 ```
@@ -62,7 +66,8 @@ daily_forecast = forecast.units.match %>%
                 RH = mean(RH, na.rm = FALSE),
                 lw = mean(avg.lw, na.rm = FALSE),
                 sw = mean(avg.sw, na.rm = FALSE),
-                precip.rate = mean(precip.rate, na.rm = FALSE))
+                precip.rate = mean(precip.rate, na.rm = FALSE)) %>%
+  ungroup()
 
 daily_obs = obs.units.match %>%
   dplyr::mutate(date = date(timestamp)) %>%
@@ -72,7 +77,8 @@ daily_obs = obs.units.match %>%
                 RH = mean(RH, na.rm = FALSE),
                 precip.rate = mean(precip_rate, na.rm = FALSE),
                 lw = mean(IR01DnCo_Avg, na.rm = FALSE),
-                sw = mean(SR01Up_Avg, na.rm = FALSE))
+                sw = mean(SR01Up_Avg, na.rm = FALSE)) %>%
+  ungroup()
 
 joined.data.daily <- inner_join(daily_forecast, daily_obs, by = "date", suffix = c(".for",".obs")) %>%
   ungroup %>%
@@ -105,6 +111,13 @@ ggplot(data = joined.data.daily, aes(x = temp.for, y = temp.obs)) +
 ```
 
 ```{r states: spatial downscaling step 1: spatially debias, add error}
+debiased.coefficients <- daily_debias_coeff(joined.data.daily, nmembers = 10)
+if(ADD_NOISE){
+  debiased <- daily_debias_from_coeff(daily_forecast, debiased.coefficients)[[2]]
+}else{
+  debiased <- daily_debias_from_coeff(daily_forecast, debiased.coefficients)[[1]]
+}
+
 debiased.results <- daily_debias_and_add_error(joined.data.daily, nmembers = 10)
 debiased <- debiased.results[[1]]
 debiased.with.noise <- debiased.results[[2]]
