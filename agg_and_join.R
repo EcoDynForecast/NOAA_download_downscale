@@ -5,10 +5,10 @@ agg_and_join <- function(obs.units.match, forecast.units.match){
     dplyr::mutate(group = as.integer(difftime(timestamp,timestamp.0, units = c("mins"))/(60*6))) %>%
     group_by(group) %>% # create groups for each 6-hour time period
     dplyr::mutate(precip.rate = mean(precip_rate, na.rm = FALSE),
-                  avg.lw = mean(IR01UpCo_Avg, na.rm = FALSE),
+                  avg.lw = mean(IR01DnCo_Avg, na.rm = FALSE),
                   avg.sw = mean(SR01Up_Avg, na.rm = FALSE)) %>%
     ungroup() %>%
-    group_by(date, hour(timestamp)) %>%
+    group_by(date(timestamp), hour(timestamp)) %>%
     dplyr::mutate(ws = mean(WS_ms_Avg, na.rm = TRUE)) %>% # hourly average wind_speed 
     ungroup() %>%
     filter(hour(timestamp) %in% c(2,8,14,20) & minute(timestamp) == 0) %>% 
