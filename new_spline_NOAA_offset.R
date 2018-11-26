@@ -2,15 +2,15 @@ new_spline_NOAA_offset <- function(redistributed){
   
   interpolate <- function(jday, var){
     result <- splinefun(jday, var, method = "monoH.FC")
-    return(result(seq(min(as.integer(jday)), max(as.integer(jday)), 1/24)))
+    return(result(seq(min(as.numeric(jday)), max(as.numeric(jday)), 1/24)))
   }
   
   # for debiased
   by.ens <- redistributed %>% 
     group_by(NOAA.member, dscale.member) %>%
-    mutate(jday = as.integer(julian(timestamp)) + (1/24) * hour(timestamp))
+    mutate(jday = julian(timestamp, origin = "1970-01-01 00:00:00"))
   
-  interp.df.jday <- by.ens %>% do(jday = seq(as.integer(min(julian(redistributed$timestamp))), as.integer(max(julian(redistributed$timestamp))), 1/24))
+  interp.df.jday <- by.ens %>% do(jday = seq(as.numeric(min(julian(redistributed$timestamp, origin = "1970-01-01 00:00:00"))), as.numeric(max(julian(redistributed$timestamp, origin = "1970-01-01 00:00:00"))), 1/24))
   # possibly add in a timestamp column here
   interp.df.temp <- do(by.ens, interp.temp = interpolate(.$jday,.$ds.temp))
   interp.df.ws <- do(by.ens, interp.ws = interpolate(.$jday,.$ds.ws))
