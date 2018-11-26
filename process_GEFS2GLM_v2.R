@@ -10,6 +10,7 @@ process_GEFS2GLM <- function(in_directory,out_directory,file_name,input_tz = 'ES
   file_name = "20181116gep_all_00z" # temporary just to be able to run something
   in_directory = "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/SCCData-noaa-data/"
   source("solar_geom.R")
+  out_directory = "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/met_output_files"
   
   f <- paste0(in_directory,'/',file_name,'.csv')
   if(!file.exists(f)){
@@ -17,19 +18,22 @@ process_GEFS2GLM <- function(in_directory,out_directory,file_name,input_tz = 'ES
     print(f)
     stop()
   }else{
-    d <- read.csv(paste0(in_directory,'/',file_name,'.csv')) 
-    forecast.date_local <- as.POSIXct(d$forecast.date, tz = input_tz)
-    d$forecast.date <- as.POSIXct(forecast.date_local, tz = output_tz)
+    input_tz = "EST5EDT"
+    output_tz = "US/Eastern" # ????? 
     
+    d <- read.csv(paste0(in_directory,'/',file_name,'.csv')) 
+     forecast.date_local <- as.POSIXct(d$forecast.date, tz = input_tz)
+     d$forecast.date <- as.POSIXct(forecast.date_local, tz = output_tz)
+    
+## LAURA'S CODE STARTS HERE    
     ## get forecast into names, units for downscaling process
     NOAA.na.value = 999900000000000000000
     forecast.data <- d %>%
-      dplyr::mutate(timestamp = as_datetime(forecast.date, tz = "US/Eastern"),
-                    timestamp = timestamp - 3600) %>% # timezone part is still wrong...temporary 
+      dplyr::mutate(timestamp = as_datetime(forecast.date, tz = "US/Eastern")) %>%
       rename(c("ensembles" = "NOAA.member"))
     
     forecast.units.match <- forecast.data %>%
-      dplyr::mutate(temp = tmp2m - 273.15, # convert from K to C
+      dplyr::mutate(temp = tmp2m,
                     ws = sqrt(vgrd10m^2 + ugrd10m^2),
                     avg.lw = ifelse(dlwrfsfc==NOAA.na.value, NA,dlwrfsfc),
                     avg.sw = ifelse(dswrfsfc==NOAA.na.value, NA,dswrfsfc),
@@ -58,6 +62,12 @@ process_GEFS2GLM <- function(in_directory,out_directory,file_name,input_tz = 'ES
       debiased <- daily_debias_from_coeff(daily_forecast, debiased.coefficients)[[1]]
     }
     
+    debiased <- debiased %>%
+      dplyr::mutate(sw.mod.noise = ifelse(sw.mod.noise<0,0,sw.mod.noise),
+                    RH.mod.noise = ifelse(RH.mod.noise>100, 100, RH.mod.noise),
+                    ws.mod.noise = ifelse(ws.mod.noise < 0, 0, ws.mod.noise))
+    
+    
     ## temporal downscaling of states
     NOAA.prop <- forecast.units.match %>%
       dplyr::mutate(date = date(timestamp)) %>%
@@ -79,8 +89,8 @@ process_GEFS2GLM <- function(in_directory,out_directory,file_name,input_tz = 'ES
       select(NOAA.member, timestamp, dscale.member, ds.temp, ds.RH, ds.ws)
     
     splined.ds <- new_spline_NOAA_offset(redistributed) %>%
-      dplyr::mutate(date = as.Date(jday, origin = as.Date("1970-01-01")),
-                    hour = round((jday - as.integer(jday))*24,0),
+      dplyr::mutate(date = as.Date(jday, origin = as.Date("1970-01-01 00:00:00")),
+                    hour = round((jday - as.integer(jday))*24, 0),
                     timestamp = as_datetime(paste(date, " ", hour, ":","00:00", sep = ""), tz = "US/Eastern"))
     
     ## temporal downscaling of shortwave
@@ -103,6 +113,8 @@ process_GEFS2GLM <- function(in_directory,out_directory,file_name,input_tz = 'ES
       dplyr::mutate(avg.rpot = mean(rpot)) %>% # daily sw mean from solar geometry
       ungroup() %>%
       dplyr::mutate(rpot.adj = ifelse(avg.rpot > 0, sw.mod.noise * (rpot/avg.rpot),0)) # rpot.adj is the 6-houlry total from NOAA forecast (avg.sw) split into hourly 
+    ggplot() + geom_line(data = sw.ds, aes(timestamp, rpot.adj, group = interaction(NOAA.member, dscale.member)), color = "red", alpha = 0.4) +
+     geom_point(data = forecast.units.match, aes(timestamp, avg.sw, group = NOAA.member))
     
     ## join state and sw output
     ds_output <- inner_join(splined.ds, sw.ds, by = c("NOAA.member","dscale.member","timestamp")) %>%
@@ -110,9 +122,25 @@ process_GEFS2GLM <- function(in_directory,out_directory,file_name,input_tz = 'ES
       rename(c("interp.temp" = "AirTemp",
              "interp.ws" = "WindSpeed",
              "interp.RH" = "RelHum",
-             "rpot.adj" = "ShortWave"))
+             "rpot.adj" = "ShortWave",
+             "timestamp" = "full_time"))
+    ds_output[,"full_time"] = strftime(ds_output$full_time, format="%Y-%m-%d %H:%M")
+      ds_output_plotting <- ds_output %>% dplyr::mutate(plotting_time = yday(full_time) + hour(full_time)/24)
+    ggplot(data = ds_output, aes(AirTemp)) + geom_histogram()
+    ggplot() +
+      geom_line(data = ds_output_plotting, aes(x = plotting_time, y = AirTemp, group = interaction(NOAA.member,dscale.member)))
+    ggplot(data = ds_output, aes(WindSpeed)) + geom_histogram()
+    ggplot() +
+      geom_line(data = ds_output_plotting, aes(x = plotting_time, y = WindSpeed, group = interaction(NOAA.member,dscale.member)))
+    ggplot(data = ds_output, aes(RelHum)) + geom_histogram()
+    ggplot() +
+      geom_line(data = ds_output_plotting, aes(x = plotting_time, y = RelHum, group = interaction(NOAA.member,dscale.member)))
+    ggplot(data = ds_output, aes(ShortWave)) + geom_histogram()
+    ggplot() +
+      geom_line(data = ds_output_plotting, aes(x = plotting_time, y = ShortWave, group = interaction(NOAA.member,dscale.member)))
     
-    # the following code chunks just convert d into desired dataframe format
+    
+### Quinn's code to convert d into desired dataframe format 
     
     full_time <- rep(NA,length(d$forecast.date)*6)
     
@@ -129,62 +157,74 @@ process_GEFS2GLM <- function(in_directory,out_directory,file_name,input_tz = 'ES
     Snow = array(0,dim=c(length(full_time),21))
     
     
-    for(ens in 1:21){
+    for(NOAA.ens in 1:21){
       for(i in 1:length(full_time)){
-        index = which(d$forecast.date == full_time[i] & d$ensembles == ens)
+        index = which(d$forecast.date == full_time[i] & d$ensembles == NOAA.ens)
         if(length(index) > 0){
-          if(d$dswrfsfc[index] < 3000){
-            ShortWave[(i-6):(i-1),ens] =  d$dswrfsfc[index]
-          }
+          # if(d$dswrfsfc[index] < 3000){
+          #   ShortWave[(i-6):(i-1),NOAA.ens] =  d$dswrfsfc[index]
+          # }
           if(d$dlwrfsfc[index] < 3000){
-            LongWave[(i-6):(i-1),ens] = d$dlwrfsfc[index]
+            LongWave[(i-6):(i-1),NOAA.ens] = d$dlwrfsfc[index]
           }
-          if(d$tmp2m[index] < 3000){
-            AirTemp[i,ens] = d$tmp2m[index]
-          }
-          if(d$rh2m[index] < 3000){
-            RelHum[i,ens] =  d$rh2m[index]
-          }
-          uwind = d$ugrd10m[index]
-          vwind= d$vgrd10m[index]
-          if(uwind < 3000 & vwind < 3000){
-            WindSpeed[i,ens] = sqrt(uwind^2 + vwind^2)
-          }
+          # if(d$tmp2m[index] < 3000){
+          #   AirTemp[i,NOAA.ens] = d$tmp2m[index]
+          # }
+          # if(d$rh2m[index] < 3000){
+          #   RelHum[i,NOAA.ens] =  d$rh2m[index]
+          # }
+          # uwind = d$ugrd10m[index]
+          # vwind= d$vgrd10m[index]
+          # if(uwind < 3000 & vwind < 3000){
+          #   WindSpeed[i,NOAA.ens] = sqrt(uwind^2 + vwind^2)
+          # }
           if(d$pratesfc[index] < 3000){
-            Rain[(i-6):(i-1),ens] = d$pratesfc[index]
+            Rain[(i-6):(i-1),NOAA.ens] = d$pratesfc[index]
           }
         }
       }
     }
     
-    for(ens in 1:21){
-      #ShortWave[,ens] = na.interpolation(ShortWave[,ens], option = "spline")
-      #LongWave[,ens] = na.interpolation(LongWave[,ens], option = "linear")
-      AirTemp[,ens] = na.interpolation(AirTemp[,ens], option = "linear")
-      RelHum[,ens] = na.interpolation(RelHum[,ens], option = "linear")
-      WindSpeed[,ens] = na.interpolation(WindSpeed[,ens], option = "linear")
-      #rain_na = which(is.na(Rain[,ens]))  
-      #Rain[rain_na,ens] = approx(Rain[,ens],xout = rain_na,method='constant')$y
-      #rain_na = which(is.na(Rain[,ens]))  
-      #rain_not_na = which(!is.na(Rain[,ens]))  
-      #Rain[rain_na[1]:rain_not_na[1]-1,ens] = Rain[rain_not_na[1],ens]
+    for(NOAA.ens in 1:21){
+      #ShortWave[,NOAA.ens] = na.interpolation(ShortWave[,NOAA.ens], option = "spline")
+      #LongWave[,NOAA.ens] = na.interpolation(LongWave[,NOAA.ens], option = "linear")
+      # AirTemp[,NOAA.ens] = na.interpolation(AirTemp[,NOAA.ens], option = "linear")
+      # RelHum[,NOAA.ens] = na.interpolation(RelHum[,NOAA.ens], option = "linear")
+      # WindSpeed[,NOAA.ens] = na.interpolation(WindSpeed[,NOAA.ens], option = "linear")
+      #rain_na = which(is.na(Rain[,NOAA.ens]))  
+      #Rain[rain_na,NOAA.ens] = approx(Rain[,NOAA.ens],xout = rain_na,method='constant')$y
+      #rain_na = which(is.na(Rain[,NOAA.ens]))  
+      #rain_not_na = which(!is.na(Rain[,NOAA.ens]))  
+      #Rain[rain_na[1]:rain_not_na[1]-1,NOAA.ens] = Rain[rain_not_na[1],NOAA.ens]
     }
     
     #NEED TO CONFIRM UNITS
     Rain <- Rain*60*60*24 #convert to mm/day
     Rain <- Rain*0.001
     #kg/m2/s to m/day
+    ds_output[,"AirTemp"] = ds_output[,"AirTemp"] - 273.15
     
-    # AirTemp <- AirTemp - 273.15 # already done within downscaling code
+    # AirTemp <- AirTemp - 273.15
     
     # format: one dataframe for each enesmble member combination
     #Save in GLM Format
     full_time = strftime(full_time, format="%Y-%m-%d %H:%M", tz = output_tz)
-    for(ens in 1:21){
-      GLM_climate = data.frame(full_time,ShortWave[,ens],LongWave[,ens],AirTemp[,ens],RelHum[,ens],WindSpeed[,ens],Rain[,ens],Snow[,ens])
-      n= noquote(c('time','ShortWave','LongWave','AirTemp','RelHum','WindSpeed','Rain','Snow'))
-      colnames(GLM_climate) = noquote(c('time','ShortWave','LongWave','AirTemp','RelHum','WindSpeed','Rain','Snow'))
-      write.csv(GLM_climate,file = paste0(out_directory,'/','met_hourly_',file_name,'_ens',ens,'.csv'),row.names = FALSE,quote = FALSE)
+    met_file_list = NULL
+    for(NOAA.ens in 1:21){
+      for(dscale.ens in 1:10){
+        GLM_climate_no_ds = data.frame(full_time,LongWave[,NOAA.ens],Rain[,NOAA.ens],Snow[,NOAA.ens]) %>%
+          dplyr::mutate(full_time = as.character(full_time))
+        GLM_climate_ds = ds_output %>%
+          filter(NOAA.member == NOAA.ens & dscale.member == dscale.ens)
+        GLM_climate = full_join(GLM_climate_no_ds, GLM_climate_ds, by = "full_time")
+        
+        
+        n= noquote(c('time','ShortWave','LongWave','AirTemp','RelHum','WindSpeed','Rain','Snow'))
+        colnames(GLM_climate) = noquote(c('time','ShortWave','LongWave','AirTemp','RelHum','WindSpeed','Rain','Snow'))
+        current_filename = paste0(out_directory,'/','met_hourly_',file_name,'_NOAA',NOAA.ens,'_ds',dscale.ens,'.csv')
+        write.csv(GLM_climate,file = current_filename, row.names = FALSE,quote = FALSE)
+        met_file_list = append(met_file_list, current_filename)
+      }
     }
     
     #### KLUDGE
