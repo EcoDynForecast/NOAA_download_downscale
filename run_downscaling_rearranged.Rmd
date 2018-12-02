@@ -22,21 +22,13 @@ path.my.files <- paste(path.working, "/my_files/",sep = "")
 NOAA.flux <- readRDS(paste(path.working, "my_files/","NOAA.flux.forecasts", sep = ""))
 NOAA.state <- readRDS(paste(path.working, "my_files/","NOAA.state.forecasts", sep = ""))
 NOAA.data = inner_join(NOAA.flux, NOAA.state, by = c("forecast.date.hour","ensembles"))
-obs.data <- read.csv(paste(path.working, "my_files/", "FCRmet.csv", sep = ""),header = TRUE) %>%
-  dplyr::mutate(AirTC_Avg = ifelse(AirTC_Avg > 44, NA, AirTC_Avg),
-                SR01Up_Avg = ifelse(SR01Up_Avg < 0, 0, SR01Up_Avg)) # get rid of really high temp values that are sensor malfunction
-
+obs.data <- read.csv(paste(path.working, "my_files/", "FCRmet.csv", sep = ""),header = TRUE)
 setwd(path.my.files)
 source("match_units.R")
-# source("agg_and_join.R")
-source("spline_NOAA_offset.R")
 source("new_spline_NOAA_offset.R")
 source("new.plot_spline.R")
-source("summary_plottting.R")
-source("debias_and_add_error.R")
 source("daily_debias_and_add_error.R")
 source("solar_geom.R")
-
 source("daily_debias_coeff.R")
 source("daily_debias_from_coeff.R")
 ADD_NOISE = TRUE
@@ -57,6 +49,23 @@ forecast.units.match = match_units(obs.data, NOAA.data)[[2]] %>%
 obs.units.match = match_units(obs.data, NOAA.data)[[1]]
 ```
 
+```{r filter out bad obs data}
+obs.units.match <- obs.units.match %>%
+  # max air temp record in Vinton, VA is 40.6 C 
+  # coldest air temp on record in Vinton, Va is -23.9 C
+  # http://www.climatespy.com/climate/summary/united-states/virginia/roanoke-regional 
+  # lots of bad data for longwave between 8/23/2018 and 9/11/2018 randomly for a couple minutes at a       # time. Removing entire section of data for now. Also bad data on a few other days
+  dplyr::mutate(AirTK_Avg = ifelse(AirTK_Avg > 273.15 + 41, NA, AirTK_Avg),
+                AirTK_Avg = ifelse(AirTK_Avg < 273.15 -23.9, NA, AirTK_Avg),
+                SR01Up_Avg = ifelse(SR01Up_Avg < 0, 0, SR01Up_Avg),
+                IR01DnCo_Avg = ifelse(IR01DnCo_Avg <0, NA, IR01DnCo_Avg),
+                IR01DnCo_Avg = ifelse(month(timestamp) > 6 & month(timestamp) < 10 & IR01DnCo_Avg < 410,NA,IR01DnCo_Avg ))
+# removed any longwave values that were less than 410 during June - October 
+# plot(obs.units.match$timestamp,obs.units.match$IR01DnCo_Avg)
+ plot(obs.units.match$timestamp,obs.units.match$AirTK_Avg)
+
+```
+
 ```{r aggregate to daily and join datasets}
 daily_forecast = forecast.units.match %>%
   dplyr::mutate(date = date(timestamp)) %>%
@@ -72,7 +81,7 @@ daily_forecast = forecast.units.match %>%
 daily_obs = obs.units.match %>%
   dplyr::mutate(date = date(timestamp)) %>%
   group_by(date) %>%
-  dplyr::summarize(temp = mean(AirTC_Avg, na.rm = TRUE), # should do something to only filter out days where at least an hour is missing
+  dplyr::summarize(temp = mean(AirTK_Avg, na.rm = TRUE), # should do something to only filter out days where at least an hour is missing
                 ws = mean(WS_ms_Avg, na.rm = FALSE),
                 RH = mean(RH, na.rm = FALSE),
                 precip.rate = mean(precip_rate, na.rm = FALSE),
@@ -98,6 +107,18 @@ ggplot(data = joined.data.daily, aes(x = temp.for, y = temp.obs)) +
   ggtitle("Temperature [C], Daily Measurements Comparison") + 
   # ggtitle("Shortwave Radiation [W/m2]") +
   theme(text = element_text(size=15))
+
+ggplot(data = joined.data.daily, aes(x = lw.for, y = lw.obs)) +
+  geom_point(alpha = 0.8, color = "darkolivegreen4", size = .8) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", formula = y~x) +
+  stat_poly_eq(formula = y~x, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE) +
+  xlab("NOAA Forecast") +
+  ylab("Site Observations") +
+  ggtitle("Longwave Radiation [W/m2]") +
+  theme(text = element_text(size=15))
+
 # start_day = 0
 # end_day = 365
 # ggplot(data = joined.data.daily %>% filter(yday <=end_day & yday >= start_day)) +
@@ -111,21 +132,34 @@ ggplot(data = joined.data.daily, aes(x = temp.for, y = temp.obs)) +
 ```
 
 ```{r states: spatial downscaling step 1: spatially debias, add error}
-debiased.coefficients <- daily_debias_coeff(joined.data.daily, nmembers = 10)
-if(ADD_NOISE){
-  debiased <- daily_debias_from_coeff(daily_forecast, debiased.coefficients)[[2]]
-}else{
-  debiased <- daily_debias_from_coeff(daily_forecast, debiased.coefficients)[[1]]
-}
-
-debiased.results <- daily_debias_and_add_error(joined.data.daily, nmembers = 10)
-debiased <- debiased.results[[1]]
-debiased.with.noise <- debiased.results[[2]]
+debiased.coefficients <- daily_debias_coeff(joined.data.daily)
+save(debiased.coefficients, file = paste(path.my.files,"debiased.coefficients.RData", sep = ""))
+ADD_NOISE = FALSE
+# should just break daily_debias... into two functions eventually 
+debiased <- daily_debias_from_coeff(daily_forecast, debiased.coefficients)
+# debiased <- add_noise(debiased, debiased.coefficients, nmembers = 10)
 ```
 
 ```{r plots from that last step}
-joined.debiased.noise.and.obs <- inner_join(debiased.with.noise, joined.data.daily, by =c( "doy","group.num"))
-ggplot(data = joined.debiased.noise.and.obs, aes(x = sw.mod, y = sw.obs)) +
+joined.debiased.and.obs <- inner_join(debiased, joined.data.daily, by =c( "date"))
+  formula = joined.debiased.and.obs$temp.obs ~ joined.debiased.and.obs$temp.mod
+  summary(lm(formula = formula))$r.squared
+  hist(lm(formula = formula)$residuals)
+  sd(lm(formula = formula)$residuals)
+  summary(lm(formula = formula)$residuals)
+  
+ggplot(data = joined.debiased.and.obs, aes(x = temp.mod, y = temp.obs)) +
+  geom_point(alpha = 0.8, color = "darkolivegreen4", size = .8) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", formula = y~x) +
+  stat_poly_eq(formula = y~x, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE) +
+  xlab("Spatially Debiased NOAA Forecast") +
+  ylab("Site Observations") +
+  ggtitle("Temperature [C], Daily Measurements Comparison") + 
+  theme(text = element_text(size=15))
+
+ggplot(data = joined.debiased.and.obs, aes(x = sw.mod, y = sw.obs)) +
   geom_point(alpha = 0.8, color = "darkolivegreen4", size = .8) +
   geom_smooth(method = "lm", se = FALSE, color = "black", formula = y~x) +
   stat_poly_eq(formula = y~x, 
@@ -137,20 +171,31 @@ ggplot(data = joined.debiased.noise.and.obs, aes(x = sw.mod, y = sw.obs)) +
   ggtitle("Shortwave [W/m2], Daily Measurements Comparison") + 
   theme(text = element_text(size=15))
 
+ggplot(data = joined.debiased.and.obs, aes(x = lw.mod, y = lw.obs)) +
+  geom_point(alpha = 0.8, color = "darkolivegreen4", size = .8) +
+  geom_smooth(method = "lm", se = FALSE, color = "black", formula = y~x) +
+  stat_poly_eq(formula = y~x, 
+               aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
+               parse = TRUE) +
+  xlab("Spatially Debiased NOAA Forecast") +
+  ylab("Site Observations") +
+  # ggtitle("Temperature [C], Daily Measurements Comparison") + 
+  ggtitle("Longwave [W/m2], Daily Measurements Comparison") + 
+  theme(text = element_text(size=15))
+
 start_day = 0
 end_day = 365
 ggplot() +
   geom_line(data = joined.data.daily %>% filter(yday <=end_day & yday >= start_day), aes(x = yday, y = sw.obs, color = "observations")) +
   geom_point(data = debiased %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = sw.mod, color = "spatially debiased", group = NOAA.member)) + 
   scale_color_brewer(palette = "Set1") +
-  # ylab("Temperature [C]") +
   ylab("Shortwave [W/m2]") +
   xlab("day of year") +
   theme(legend.position="bottom", text = element_text(size=15))
 
 ggplot() +
   geom_line(data = joined.data.daily %>% filter(yday <=end_day & yday >= start_day), aes(x = yday, y = temp.obs, color = "observations")) +
-  geom_point(data = debiased.with.noise %>% filter(yday <=end_day & yday >= start_day), aes(x = yday, y = temp.mod, color = "downscaled + spatially debiased", group = interaction(NOAA.member,dscale.member))) + 
+  geom_point(data = debiased %>% filter(yday <=end_day & yday >= start_day), aes(x = yday, y = temp.mod, color = "downscaled + spatially debiased", group = interaction(NOAA.member,dscale.member))) + 
   scale_color_brewer(palette = "Set1") +
   ylab("Temperature [C]") +
   xlab("day of year") +
@@ -164,19 +209,21 @@ NOAA.prop <- forecast.units.match %>%
   group_by(NOAA.member, date) %>%
   dplyr::mutate(temp.daily.mean = mean(temp, na.rm = FALSE),
                 RH.daily.mean = mean(RH, na.rm = FALSE),
-                ws.daily.mean = mean(ws, na.rm = FALSE)) %>%
+                ws.daily.mean = mean(ws, na.rm = FALSE),
+                lw.daily.mean = mean(avg.lw, na.rm = FALSE)) %>%
   ungroup() %>%
   mutate(temp.prop = temp/temp.daily.mean, # proportion of daily mean that each 6-hourly measurement is
          RH.prop = RH/RH.daily.mean,
-         ws.prop = ws/ws.daily.mean) %>%
-  select(NOAA.member, date, timestamp, temp.prop, RH.prop, ws.prop)
+         ws.prop = ws/ws.daily.mean,
+         lw.prop = avg.lw/lw.daily.mean) %>%
+  select(NOAA.member, date, timestamp, temp.prop, RH.prop, ws.prop, lw.prop)
 
 # redistributed size: nums days * 21 NOAA members * 4 meas/day * 10 noise members
 # 
-redistributed <- inner_join(debiased.with.noise, NOAA.prop, by = c("date","NOAA.member")) %>%
-  dplyr::mutate(ds.temp = temp.mod.noise * temp.prop,
-                ds.RH = RH.mod.noise * RH.prop,
-                ds.ws = ws.mod.noise * ws.prop) %>%
+redistributed <- inner_join(debiased, NOAA.prop, by = c("date","NOAA.member")) %>%
+  dplyr::mutate(ds.temp = temp.mod * temp.prop,
+                ds.RH = RH.mod * RH.prop,
+                ds.ws = ws.mod * ws.prop) %>%
   ungroup() %>%
   select(NOAA.member, timestamp, dscale.member, ds.temp, ds.RH, ds.ws)
 
@@ -187,48 +234,37 @@ redistributed <- inner_join(debiased.with.noise, NOAA.prop, by = c("date","NOAA.
 
 ```
 
-```{r plots from last step}
-ggplot(data = inner_join(redistributed, obs.units.match, by = c("doy")), aes(x = ds.temp, y = AirTC_Avg)) +
+```{r diagnostics, plots for redistributing to 6-hourly}
+  joined.redistributed.and.obs <- inner_join(redistributed, obs.units.match, by = "timestamp")
+  formula = joined.redistributed.and.obs$AirTK_Avg ~ joined.redistributed.and.obs$ds.temp
+  print('r.squared')
+  summary(lm(formula = formula))$r.squared
+  hist(lm(formula = formula)$residuals)
+  print('sd of residuals')
+  sd(lm(formula = formula)$residuals)
+  summary(lm(formula = formula)$residuals)
+
+ggplot(data = joined.redistributed.and.obs, aes(x = ds.temp, y = AirTK_Avg)) +
   geom_point(alpha = 0.3) +
     stat_poly_eq(formula = y~x, 
                   aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
                   parse = TRUE) +
   xlab("debiased forecast") +
   ylab("observations") +
-  ggtitle("Temperature comparison without noise") +
+  ggtitle("Temperature comparison") +
   scale_color_brewer(palette = "Set1") +
   theme(legend.position="bottom", text = element_text(size=15))
 
-ggplot(data = inner_join(redistributed.noise, obs.units.match, by = c("doy")), aes(x = ds.temp, y = AirTC_Avg)) +
-  geom_point(alpha = 0.3) +
-    stat_poly_eq(formula = y~x, 
-                  aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-                  parse = TRUE) +
-  xlab("debiased forecast") +
-  ylab("observations") +
-  ggtitle("Temperature comparison with added noise") +
-  scale_color_brewer(palette = "Set1") +
-  theme(legend.position="bottom", text = element_text(size=15))
-
-start_day = 200
-end_day = 210
-ggplot() +
-    geom_line(data = obs.units.match %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = AirTC_Avg, color = "observations"), size = 1.5) +
-  geom_point(data = redistributed %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = ds.temp, group = NOAA.member, color = "debiased forecast redistributed")) +
+start_day = 0
+end_day = 365
+ggplot(data = joined.redistributed.and.obs %>% filter(yday(timestamp) <=end_day & yday(timestamp) >= start_day)) +
+    geom_line(aes(x = timestamp, y =IR01DnCo_Avg, color = "observations"), size = 1.5) +
+  geom_point(aes(x = timestamp, y = ds.lw, group = NOAA.member, color = "debiased forecast redistributed"), alpha = 0.4, size = 0.7) +
   scale_color_brewer(palette = "Set1") +
   ylab("Temperature [C]") +
   xlab("day of year") +
   theme(legend.position="bottom", text = element_text(size=15)) +
-  ggtitle("Temperature comparison no noise")
-
-ggplot() +
-    geom_line(data = obs.units.match %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = AirTC_Avg, color = "observations"), size = 1.5) +
-  geom_point(data = redistributed.noise %>% filter(doy <=end_day & doy >= start_day), aes(x = doy, y = ds.temp, group = NOAA.member, color = "debiased forecast redistributed")) +
-  scale_color_brewer(palette = "Set1") +
-  ylab("Temperature [C]") +
-  xlab("day of year") +
-  theme(legend.position="bottom", text = element_text(size=15)) +
-  ggtitle("Temperature comparison with added noise")
+  ggtitle("Longwave comparison")
 
 ```
 
@@ -237,13 +273,16 @@ splined.ds <- new_spline_NOAA_offset(redistributed) %>%
   dplyr::mutate(date = as.Date(jday, origin = as.Date("1970-01-01")),
                 hour = round((jday - as.integer(jday))*24,0),
                 timestamp = as_datetime(paste(date, " ", hour, ":","00:00", sep = ""), tz = "US/Eastern")) # if filtering out incomplete days, that would happen here
-
-
-
 joined.obs.and.spline <- inner_join(obs.units.match, splined.ds, by = "timestamp")
+debiased.coefficients$temp[4] = sd(lm(joined.obs.and.spline$AirTK_Avg ~ joined.obs.and.spline$interp.temp)$residuals)
+debiased.coefficients$RH[4] = sd(lm(joined.obs.and.spline$RH ~ joined.obs.and.spline$interp.RH)$residuals)
+debiased.coefficients$ws[4] = sd(lm(joined.obs.and.spline$WS_ms_Avg ~ joined.obs.and.spline$interp.ws)$residuals)
 
-  formula = joined.obs.and.spline$AirTC_Avg ~ joined.obs.and.spline$interp.temp
+  formula = joined.obs.and.spline$AirTK_Avg ~ joined.obs.and.spline$interp.temp
   summary(lm(formula = formula))$r.squared
+  hist(lm(formula = formula)$residuals)
+  sd(lm(formula = formula)$residuals)
+  mean(lm(formula = formula)$residuals)
   
 # ggplot(data = joined.obs.and.spline, aes(x = interp.temp, y = AirTC_Avg, alpha = 0.5)) +
 #   geom_point() +
@@ -256,79 +295,18 @@ joined.obs.and.spline <- inner_join(obs.units.match, splined.ds, by = "timestamp
 #   scale_color_brewer(palette = "Set1") +
 #   theme(legend.position="bottom", text = element_text(size=15))
 
-start_day = 200
-end_day = 210
+start_day = 280
+end_day = 300
 ggplot(data = joined.obs.and.spline %>% filter(yday(timestamp) <=end_day & yday(timestamp) >= start_day)) +
   geom_line(aes(x = timestamp, y = interp.temp, group = interaction(NOAA.member, dscale.member), color = "debiased forecast"), alpha = 0.5) +
-  geom_line(aes(x = timestamp, y = AirTC_Avg, color = "observations"), size = 1.5) +
+  geom_line(aes(x = timestamp, y = AirTK_Avg, color = "observations"), size = 1.5) +
   scale_color_brewer(palette = "Set1") +
   theme(legend.position="bottom", text = element_text(size=15))
 ```
 
-```{r apply offset (but not to ws)}
-offset <- joined.obs.and.spline %>%
-  dplyr::mutate(doy.group = floor(doy)) %>%
-  dplyr::group_by(NOAA.member, dscale.member, doy.group) %>% 
-  dplyr::mutate(temp.offset = ifelse(hour == 4,interp.temp - AirTC_Avg, NA),
-                temp.interp.ds = ifelse(hour >= 4, interp.temp - max(temp.offset, na.rm = TRUE), AirTC_Avg),
-                ws.offset = 0, # not doing offset for ws
-                ws.interp.ds = ifelse(hour >= 4, interp.ws - max(ws.offset, na.rm = TRUE), WS_ms_Avg),
-                RH.offset = ifelse(hour == 4, interp.RH - RH, NA),
-                RH.interp.ds = ifelse(hour >= 4, interp.RH - max(RH.offset, na.rm = TRUE), RH)) %>%
-  ungroup()
-  
-offset.noise <- joined.obs.and.spline.noise %>%
-  dplyr::mutate(doy.group = floor(doy)) %>%
-  dplyr::group_by(NOAA.member, dscale.member, doy.group) %>% 
-  dplyr::mutate(temp.offset = ifelse(hour == 4,interp.temp - AirTC_Avg, NA),
-                temp.interp.ds = ifelse(hour >= 4, interp.temp - max(temp.offset, na.rm = TRUE), AirTC_Avg),
-                ws.offset = 0, # not doing offset for ws
-                ws.interp.ds = ifelse(hour >= 4, interp.ws - max(ws.offset, na.rm = TRUE), WS_ms_Avg),
-                RH.offset = ifelse(hour == 4, interp.RH - RH, NA),
-                RH.interp.ds = ifelse(hour >= 4, interp.RH - max(RH.offset, na.rm = TRUE), RH)) %>%
-  ungroup()
-
-formula = offset$AirTC_Avg ~ offset$temp.interp.ds # artificially high bc 12-4am is matches with obs
-summary(lm(formula = formula))$r.squared
-formula = offset.noise$AirTC_Avg ~ offset.noise$temp.interp.ds
-summary(lm(formula = formula))$r.squared
-
-# ggplot(data = offset, aes(x = temp.interp.ds, y = AirTC_Avg), alpha = 0.5) +
-#   geom_point() + 
-#   stat_poly_eq(formula = y~x, 
-#                   aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-#                   parse = TRUE) +
-#   xlab("debiased forecast") +
-#   ylab("observations") +
-#   ggtitle("Temperature comparison without noise") +
-#   scale_color_brewer(palette = "Set1") +
-#   theme(legend.position="bottom", text = element_text(size=15))
-# 
-# ggplot(data = offset.noise, aes(x = temp.interp.ds, y = AirTC_Avg), alpha = 0.5) +
-#   geom_point() + 
-#   stat_poly_eq(formula = y~x, 
-#                   aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")), 
-#                   parse = TRUE) +
-#   xlab("debiased forecast") +
-#   ylab("observations") +
-#   ggtitle("Temperature comparison with added noise") +
-#   scale_color_brewer(palette = "Set1") +
-#   theme(legend.position="bottom", text = element_text(size=15))
-
-ggplot(data = offset %>% filter(doy <=end_day & doy >= start_day)) +
-  geom_line(aes(x = doy, y = AirTC_Avg, color = "observations"), size = 1.5) +
-  geom_line(aes(x = doy, y = temp.interp.ds, group = NOAA.member, color = "downscaled forecasts + offset")) +
-  scale_color_brewer(palette = "Set1") +
-  theme(legend.position="bottom", text = element_text(size=15))
-ggplot(data = offset.noise %>% filter(doy <=end_day & doy >= start_day)) +
-  geom_line(aes(x = doy, y = AirTC_Avg, color = "observations"), size = 1.5) +
-  geom_line(aes(x = doy, y = temp.interp.ds, group = interaction(NOAA.member,dscale.member), color = "downscaled forecasts + offset")) +
-  scale_color_brewer(palette = "Set1") +
-  theme(legend.position="bottom", text = element_text(size=15))
-  
-```
 
 ```{r compare shortwave obs and forecast}
+# comparing 6-hourly groups
 time.1 = as_datetime("2018-04-23 06:01:00")
 obs.sw.comparison <- obs.units.match %>% mutate(group.num.2 = as.integer((timestamp - time.1)/(60*60*6))) %>%
   dplyr::group_by(group.num.2) %>%
@@ -382,12 +360,12 @@ print(ggplot(data = yearly_geom) +
 
 # could add ensemble members here for downscaling noise in future
 
-sw.hours <- debiased.with.noise %>%
+sw.hours <- debiased %>%
   dplyr::group_by(NOAA.member, date) %>%
   tidyr::expand(hour = 0:23)
   
-sw.ds <- debiased.with.noise %>% 
-  select(sw.mod.noise, dscale.member, NOAA.member, date) %>%
+sw.ds <- debiased %>% 
+  select(sw.mod, dscale.member, NOAA.member, date) %>%
   dplyr::group_by(NOAA.member, date, dscale.member) %>%
   inner_join(sw.hours, by = c("NOAA.member","date")) %>%
   ungroup() %>%
@@ -397,7 +375,7 @@ sw.ds <- debiased.with.noise %>%
   dplyr::group_by(date) %>%
   dplyr::mutate(avg.rpot = mean(rpot)) %>% # daily sw mean from solar geometry
   ungroup() %>%
-  dplyr::mutate(rpot.adj = ifelse(avg.rpot > 0, sw.mod.noise * (rpot/avg.rpot),0)) %>%
+  dplyr::mutate(rpot.adj = ifelse(avg.rpot > 0, sw.mod * (rpot/avg.rpot),0)) %>%
   dplyr::mutate(doy = formattable(doy,4)) # rpot.adj is the 6-houlry total from NOAA forecast (avg.sw) split into hourly values based on the shape of the solar_geom curve
 
 start_day = 208
@@ -415,7 +393,6 @@ ggplot() +
   ylab("Incoming Solar Radiation [W/m2]") +
   xlab("Day of Year")
 
-# a mess right now with trying to match obs and ds at hourly resolution, would like to join them later to asses the accuracy of the downscaling process
 obs.sw.ds.comparison <- obs.units.match %>%
   select(SR01Up_Avg, timestamp) %>%
   dplyr::mutate(hour = hour(timestamp),
@@ -426,13 +403,13 @@ obs.sw.ds.comparison <- obs.units.match %>%
 # should add 1 hour because downscaled times are reported as the average over the past hour, not the average over the current hour and adding 1 converts from treating is as current hour to past hour
 # below works, but takes a long time to run because there's so many data points
 ds.shortwave.comparison <- inner_join(sw.ds, obs.sw.ds.comparison, by = "timestamp", suffix = c(".ds",".obs"))
-#  ggplot(data = ds.shortwave.comparison, aes(x = rpot.adj, y = avg.sw.hrly), alpha = 0.5) +
-#    geom_point()
+  # ggplot(data = ds.shortwave.comparison, aes(x = rpot.adj, y = avg.sw.hrly), alpha = 0.5) +
+  #   geom_point()
 print("r squared")
 summary(lm(ds.shortwave.comparison$avg.sw.hrly~ds.shortwave.comparison$rpot.adj))$r.squared
-print("slope")
-lm(ds.shortwave.comparison$avg.sw.hrly~ds.shortwave.comparison$rpot.adj)$coefficients[2]
-
+print("sd")
+debiased.coefficients$sw[4] = sd(lm(ds.shortwave.comparison$avg.sw.hrly~ds.shortwave.comparison$rpot.adj)$residuals)
+save(debiased.coefficients, file = paste(path.my.files,"debiased.coefficients.RData", sep = ""))
 ```
 
 
