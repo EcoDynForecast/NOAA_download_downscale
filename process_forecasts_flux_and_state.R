@@ -60,16 +60,16 @@ for(i in 1:length(date.list)){
              NOAA.file.group = i) # group number for which file the data is from
     
     tmp.state <- tmp.data %>%
-      filter(forecast.date.hour %in% c(date.list[i] - hours(4), date.list[i] + hours(2), date.list[i] + hours(8), date.list[i] + hours(14))) %>%
+      filter(forecast.date.hour %in% c(date.list[i] - hours(4), date.list[i] - hours(5), date.list[i] + hours(1), date.list[i] + hours(0), date.list[i] + hours(8), date.list[i] + hours(7), date.list[i] + hours(14), date.list[i] + hours(13))) %>%
       select(ensembles, tmp2m, rh2m, vgrd10m, ugrd10m, forecast.date.hour, NOAA.file.group)
     
     tmp.flux <- tmp.data %>%
-      filter(forecast.date.hour %in% c(date.list[i] + hours(2), date.list[i] + hours(8), date.list[i] + hours(14), date.list[i] + hours(20))) %>%
+      filter(forecast.date.hour %in% c(date.list[i] + hours(2),date.list[i] + hours(1),  date.list[i] + hours(8),date.list[i] + hours(7), date.list[i] + hours(14),date.list[i] + hours(13), date.list[i] + hours(20),date.list[i] + hours(19))) %>%
       select(ensembles, pratesfc, dlwrfsfc, dswrfsfc, forecast.date.hour, NOAA.file.group)
     flux.forecasts = rbind(flux.forecasts, tmp.flux)
     state.forecasts = rbind(state.forecasts, tmp.state)
   }else{
-    print(paste("You are missing a file for date: ", date.path, sep = ""))
+    print(paste("Missing a file for date: ", date.path, sep = ""))
   }
   
 }
