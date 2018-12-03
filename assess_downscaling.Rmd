@@ -1,0 +1,59 @@
+---
+title: "assess_downscaling"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+START_TIME = "2018-11-18 00:19:00 UTC"
+END_TIME = "2018-12-02 00:19:00 UTC"
+
+
+```
+
+```{r average daily performance over 14 days withheld}
+sum.1day.table = data_frame(metric = c("temp","RH","ws","sw","lw"),  r2.no.noise.ds = rep(0,5), r2.ds.obs = rep(0,5),mean.residual.no.noise = rep(0,5), mean.residual.with.noise = rep(0,5))
+mean.1day.table = data_frame(metric = c("temp","RH","ws","sw","lw"),  r2.no.noise.ds = rep(NA,5), r2.ds.obs = rep(NA,5),mean.residual.no.noise = rep(NA,5), mean.residual.with.noise = rep(NA,5))
+count = 0
+for (i in 0:13){
+  table.i = assess_downscaling(start_time = as_datetime(START_TIME) + 24*60*60 * i, end_time = as_datetime(START_TIME) +  24*60*60 * (i + 1)) # iterating one day at a time, 1-day intervals
+  for(n in 1:nrow(table.i)){
+    for(m in 2:ncol(table.i)){
+      sum.1day.table[n,m] = sum.1day.table[n,m] + table.i[n,m]
+    }
+  }
+  count = count + 1
+}
+  for(n in 1:nrow(sum.1day.table)){
+    for(m in 2:ncol(sum.1day.table)){
+      mean.1day.table[n,m] = sum.1day.table[n,m]/count
+    }
+  }
+print(mean.1day.table)
+```
+
+
+```{r average 3-day performance over 16 days withheld}
+sum.3day.table = data_frame(metric = c("temp","RH","ws","sw","lw"),  r2.no.noise.ds = rep(0,5), r2.ds.obs = rep(0,5),mean.residual.no.noise = rep(0,5), mean.residual.with.noise = rep(0,5))
+mean.3day.table = data_frame(metric = c("temp","RH","ws","sw","lw"),  r2.no.noise.ds = rep(NA,5), r2.ds.obs = rep(NA,5),mean.residual.no.noise = rep(NA,5), mean.residual.with.noise = rep(NA,5))
+count = 0
+for (i in 0:12){ # once I load in more data, this should be 16 days not 13
+  table.i = assess_downscaling(start_time = as_datetime(START_TIME) + 24*60*60 * i, end_time = as_datetime(START_TIME) +  24*60*60 * (i + 3)) # iterating one day at a time, 3-day intervals
+  for(n in 1:nrow(table.i)){
+    for(m in 2:ncol(table.i)){
+      sum.3day.table[n,m] = sum.3day.table[n,m] + table.i[n,m]
+    }
+  }
+  count = count + 1
+}
+  for(n in 1:nrow(sum.3day.table)){
+    for(m in 2:ncol(sum.3day.table)){
+      mean.3day.table[n,m] = sum.3day.table[n,m]/count
+    }
+  }
+print(mean.3day.table)
+```
+```{r 16 day performance}
+results = assess_downscaling(start_time = "2018-11-18 00:19:00 UTC", end_time = "2018-12-02 00:19:00 UTC")
+results
+
+```
