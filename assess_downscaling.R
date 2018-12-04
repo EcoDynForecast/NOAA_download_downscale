@@ -19,12 +19,15 @@ assess_downscaling <- function(start_time, end_time, DOWNSCALE_MET, ADD_NOISE, P
     dplyr::mutate(hour = hour(timestamp),
                   date = date(timestamp)) %>%
     dplyr::mutate(timestamp = as_datetime(paste(date, " ", hour, ":","00:00", sep = ""), tz = "UTC"))
-  #   dplyr::group_by(date, hour) %>%
-  #   dplyr::summarize(avg.temp.hrly = mean(AirTK_Avg-273.15, na.rm = TRUE),
-  #                    avg.sw.hrly = mean(SR01Up_Avg),
-  #                    avg.lw.hrly = mean(IR01DnCo_Avg),
-  #                    avg.ws.hrly = mean(WS_ms_Avg),
-  #                    avg.RH.hrly = mean(RH)) %>%
+  
+  hrly.obs.units.match <- obs.units.match %>%
+     dplyr::group_by(timestamp) %>%
+     dplyr::summarize(AirTK_Avg = mean(AirTK_Avg, na.rm = TRUE),
+                      SR01Up_Avg = mean(SR01Up_Avg),
+                      IR01DnCo_Avg = mean(IR01DnCo_Avg),
+                      WS_ms_Avg = mean(WS_ms_Avg),
+                      RH = mean(RH)) %>%
+       ungroup()
   #   dplyr::mutate(timestamp = as_datetime(paste(date, " ", hour, ":","00:00", sep = ""), tz = "US/Eastern"))
   
   ## GET FORECAST DATA
@@ -80,13 +83,13 @@ assess_downscaling <- function(start_time, end_time, DOWNSCALE_MET, ADD_NOISE, P
                              CI.95 = rep(NA,5),
                              CI.100 = rep(NA,5))
   
-  joined <- dplyr::inner_join(obs.units.match, output, by = "timestamp") %>% group_by(timestamp, NOAA.member) %>%
+  joined <- dplyr::inner_join(hrly.obs.units.match, output, by = "timestamp") %>% group_by(timestamp, NOAA.member) %>%
     dplyr::summarize(AirTemp = first(AirTemp), # doing this bc join function misbehaving and producing replicates
                      WindSpeed = first(WindSpeed),
                      RelHum = first(RelHum),
                      ShortWave = first(ShortWave),
                      AirTK_Avg = first(AirTK_Avg),
-                     # LongWave = first(LongWave), # come back to longwave later
+                     LongWave = first(LongWave), # come back to longwave later
                      RH = first(RH),
                      SR01Up_Avg = first(SR01Up_Avg),
                      WS_ms_Avg = first(WS_ms_Avg),
@@ -94,21 +97,21 @@ assess_downscaling <- function(start_time, end_time, DOWNSCALE_MET, ADD_NOISE, P
     ungroup() %>%
     mutate(date = date(timestamp)) %>%
     group_by(date) %>%
-    dplyr::mutate(daily_IR01DnCo_Avg = mean(IR01DnCo_Avg)) %>% # daily average shortwave
+    dplyr::mutate(daily_IR01DnCo_Avg = mean(IR01DnCo_Avg)/24) %>% # daily average longwave
     ungroup()
   
   mean.joined <- joined %>%
-    dplyr::group_by(timestamp) %>% # average across ensembles
+    dplyr::group_by(timestamp) %>% # average across ensembles (only really taking average of forecasted variables)
     dplyr::summarize(WindSpeed = mean(WindSpeed),
                      RelHum = mean(RelHum),
                      ShortWave = mean(ShortWave),
                      AirTemp = mean(AirTemp),
-                     # LongWave = mean(LongWave), # come back to longwave later
+                     LongWave = mean(LongWave), # come back to longwave later
                      AirTK_Avg = mean(AirTK_Avg),
                      RH = mean(RH),
                      SR01Up_Avg = mean(SR01Up_Avg),
                      WS_ms_Avg = mean(WS_ms_Avg),
-                     IR01DnCo_Avg = mean(IR01DnCo_Avg)) %>%
+                     daily_IR01DnCo_Avg = mean(daily_IR01DnCo_Avg)) %>%
     ungroup()
   
   formula = lm(mean.joined$AirTK_Avg ~ mean.joined$AirTemp)
@@ -139,12 +142,12 @@ assess_downscaling <- function(start_time, end_time, DOWNSCALE_MET, ADD_NOISE, P
   summary.table[4,5] = check_CI(df = joined, obs.col.name = "SR01Up_Avg", for.col.name = "ShortWave")$check.95.pcnt
   summary.table[4,6] = check_CI(df = joined, obs.col.name = "SR01Up_Avg", for.col.name = "ShortWave")$check.100.pcnt
   
-  # formula = lm(joined.no.noise$daily_IR01DnCo_Avg ~ joined.no.noise$LongWave)
-  # summary.table[5,2] = summary(lm(formula))$r.squared
-  # summary.table[5,3] = mean(lm(formula)$residuals)
-  # summary.table[5,4] = check_CI(df = joined, obs.col.name = "daily_IR01DnCo_Avg", for.col.name = "LongWave")$check.90.pcnt
-  # summary.table[5,5] = check_CI(df = joined, obs.col.name = "daily_IR01DnCo_Avg", for.col.name = "LongWave")$check.95.pcnt
-  # summary.table[5,6] = check_CI(df = joined, obs.col.name = "daily_IR01DnCo_Avg", for.col.name = "LongWave")$check.100.pcnt
+  formula = lm(mean.joined$daily_IR01DnCo_Avg ~ mean.joined$LongWave)
+  summary.table[5,2] = summary(lm(formula))$r.squared
+  summary.table[5,3] = mean(lm(formula)$residuals)
+  summary.table[5,4] = check_CI(df = joined, obs.col.name = "daily_IR01DnCo_Avg", for.col.name = "LongWave")$check.90.pcnt
+  summary.table[5,5] = check_CI(df = joined, obs.col.name = "daily_IR01DnCo_Avg", for.col.name = "LongWave")$check.95.pcnt
+  summary.table[5,6] = check_CI(df = joined, obs.col.name = "daily_IR01DnCo_Avg", for.col.name = "LongWave")$check.100.pcnt
   if(PRINT){
     print(summary.table)
   }

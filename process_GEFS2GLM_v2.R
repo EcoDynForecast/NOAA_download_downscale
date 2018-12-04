@@ -66,6 +66,14 @@ process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE, PLOT){
       dplyr::mutate(sw.mod = ifelse(sw.mod < 0,0,sw.mod),
                     RH.mod = ifelse(RH.mod > 100, 100, RH.mod),
                     ws.mod = ifelse(ws.mod < 0, 0, ws.mod))
+    debiased.lw.hourly <- debiased %>%
+      select(date, NOAA.member, dscale.member, lw.mod) %>%
+      dplyr::group_by(date) %>%
+      dplyr::mutate(LongWave = lw.mod/24) %>% # convert from daily to hourly 
+      dplyr::group_by(date, LongWave) %>% # to carry along ShortWave for expanding in next step
+      tidyr::expand(hour = 0:23) %>%
+      ungroup() %>%
+      dplyr::mutate(timestamp = as_datetime(paste(date, " ", hour, ":","00:00", sep = ""), tz = "US/Eastern")) # create timestamps from date
     
     ## temporal downscaling of states
     NOAA.prop <- forecast.units.match %>%
@@ -118,6 +126,7 @@ process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE, PLOT){
     ## join state and sw output
     ds_output <- inner_join(splined.ds, sw.ds, by = c("NOAA.member","dscale.member","timestamp")) %>%
       select(timestamp, NOAA.member, dscale.member, interp.temp, interp.ws, interp.RH, rpot.adj) %>%
+      inner_join(debiased.lw.hourly, by = "timestamp") %>%
       plyr::rename(replace = c("interp.temp" = "AirTemp",
                                "interp.ws" = "WindSpeed",
                                "interp.RH" = "RelHum",
@@ -235,13 +244,13 @@ process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE, PLOT){
   for(NOAA.ens in 1:21){
     if(DOWNSCALE_MET){
       for(dscale.ens in 1:nmembers){
-        GLM_climate_no_ds = data.frame(full_time,LongWave[,NOAA.ens],Rain[,NOAA.ens],Snow[,NOAA.ens]) %>%
+        GLM_climate_no_ds = data.frame(full_time,Rain[,NOAA.ens],Snow[,NOAA.ens]) %>%
           dplyr::mutate(full_time = as.character(full_time))
         GLM_climate_ds = ds_output %>%
           filter(NOAA.member == NOAA.ens & dscale.member == dscale.ens) %>%
-          select(full_time, AirTemp, WindSpeed, RelHum, ShortWave)
+          select(full_time, AirTemp, WindSpeed, RelHum, ShortWave, LongWave)
         GLM_climate = full_join(GLM_climate_no_ds, GLM_climate_ds, by = "full_time")
-        colnames(GLM_climate) = noquote(c('time','LongWave','Rain','Snow', 'AirTemp','WindSpeed', 'RelHum','ShortWave'))
+        colnames(GLM_climate) = noquote(c('time','Rain','Snow', 'AirTemp','WindSpeed', 'RelHum','ShortWave', 'LongWave'))
         current_filename = paste0(out_directory,'/','met_hourly_',file_name,'_NOAA',NOAA.ens,'_ds',dscale.ens,'.csv')
         write.csv(GLM_climate,file = current_filename, row.names = FALSE,quote = FALSE)
         met_file_list.ds = append(met_file_list.ds, current_filename)
