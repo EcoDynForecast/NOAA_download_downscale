@@ -46,6 +46,15 @@ forecast.units.match = prep_for(NOAA.data) %>%
                 avg.sw = ifelse(n==4, avg.sw, NA),
                 avg.lw = ifelse(n==4, avg.lw, NA),
                 precip.rate = ifelse(n==4, precip.rate, NA)) %>%
+  ungroup() %>%
+  dplyr::group_by(timestamp) %>%
+  dplyr::summarize(NOAA.member = "mean",
+            temp = mean(temp),
+            RH = mean(RH),
+            ws = mean(ws),
+            avg.sw = mean(avg.sw),
+            avg.lw = mean(avg.lw),
+            precip.rate = mean(precip.rate)) %>%
   ungroup()
 obs.units.match = prep_obs(obs.data)
 ```
@@ -139,7 +148,6 @@ ggplot(data = joined.data.daily, aes(x = lw.for, y = lw.obs)) +
 debiased.coefficients <- daily_debias_coeff(joined.data.daily)
 save(debiased.coefficients, file = paste(path.my.files,"debiased.coefficients.RData", sep = ""))
 ADD_NOISE = FALSE
-# should just break daily_debias... into two functions eventually 
 debiased <- daily_debias_from_coeff(daily_forecast, debiased.coefficients)
 # debiased <- add_noise(debiased, debiased.coefficients, nmembers = 10)
 ```
@@ -291,24 +299,33 @@ splined.ds <- new_spline_NOAA_offset(redistributed) %>%
                 hour = round((jday - as.integer(jday))*24,0),
                 timestamp = as_datetime(paste(date, " ", hour, ":","00:00", sep = ""), tz = "US/Eastern")) # if filtering out incomplete days, that would happen here
 joined.obs.and.spline <- inner_join(obs.units.match, splined.ds, by = "timestamp")
-debiased.coefficients$temp[4] = sd(lm(joined.obs.and.spline$AirTK_Avg ~ joined.obs.and.spline$interp.temp)$residuals)
-debiased.coefficients$RH[4] = sd(lm(joined.obs.and.spline$RH ~ joined.obs.and.spline$interp.RH)$residuals)
-debiased.coefficients$ws[4] = sd(lm(joined.obs.and.spline$WS_ms_Avg ~ joined.obs.and.spline$interp.ws)$residuals)
+mean.joined.obs.and.spline <- joined.obs.and.spline %>%
+  group_by(timestamp) %>%
+  dplyr::summarize(AirTK_Avg = mean(AirTK_Avg),
+                interp.temp = mean(interp.temp),
+                RH = mean(RH),
+                interp.RH = mean(interp.RH),
+                WS_ms_Avg = mean(WS_ms_Avg),
+                interp.ws = mean(interp.ws)) %>%
+  ungroup()
+debiased.coefficients$temp[4] = sd(lm(mean.joined.obs.and.spline$AirTK_Avg ~ mean.joined.obs.and.spline$interp.temp)$residuals)
+debiased.coefficients$RH[4] = sd(lm(mean.joined.obs.and.spline$RH ~ mean.joined.obs.and.spline$interp.RH)$residuals)
+debiased.coefficients$ws[4] = sd(lm(mean.joined.obs.and.spline$WS_ms_Avg ~ mean.joined.obs.and.spline$interp.ws)$residuals)
 
-formula = joined.obs.and.spline$AirTK_Avg ~ joined.obs.and.spline$interp.temp
+formula = mean.joined.obs.and.spline$AirTK_Avg ~ mean.joined.obs.and.spline$interp.temp
 r.squared.table[1,3] = summary(lm(formula = formula))$r.squared
-formula = joined.obs.and.spline$RH ~ joined.obs.and.spline$interp.RH
+formula = mean.joined.obs.and.spline$RH ~ mean.joined.obs.and.spline$interp.RH
 r.squared.table[2,3] = summary(lm(formula = formula))$r.squared
-formula = joined.obs.and.spline$WS_ms_Avg ~ joined.obs.and.spline$interp.ws
+formula = mean.joined.obs.and.spline$WS_ms_Avg ~ mean.joined.obs.and.spline$interp.ws
 r.squared.table[3,3] = summary(lm(formula = formula))$r.squared
 
-  formula = joined.obs.and.spline$AirTK_Avg ~ joined.obs.and.spline$interp.temp
+  formula = mean.joined.obs.and.spline$AirTK_Avg ~ mean.joined.obs.and.spline$interp.temp
   summary(lm(formula = formula))$r.squared
   hist(lm(formula = formula)$residuals)
   sd(lm(formula = formula)$residuals)
   mean(lm(formula = formula)$residuals)
   
-# ggplot(data = joined.obs.and.spline, aes(x = interp.temp, y = AirTC_Avg, alpha = 0.5)) +
+# ggplot(data = mean.joined.obs.and.spline, aes(x = interp.temp, y = AirTC_Avg, alpha = 0.5)) +
 #   geom_point() +
 #   stat_poly_eq(formula = y~x,
 #                   aes(label = paste(..eq.label.., ..rr.label.., sep = "~~~")),
@@ -433,14 +450,18 @@ ds.shortwave.comparison <- inner_join(sw.ds, obs.sw.ds.comparison, by = "timesta
 
 # figure out why rsquared is so low (too much noise?)
 # get no noise version working
-
-formula = ds.shortwave.comparison$avg.sw.hrly ~ ds.shortwave.comparison$rpot.adj
+mean.ds.shortwave.comparison = ds.shortwave.comparison %>%
+  group_by(timestamp) %>%
+  dplyr::summarize(rpot.adj = mean(rpot.adj),
+                avg.sw.hrly = mean(avg.sw.hrly)) %>%
+  ungroup()
+formula = mean.ds.shortwave.comparison$avg.sw.hrly ~ mean.ds.shortwave.comparison$rpot.adj
 r.squared.table[4,3] = summary(lm(formula = formula))$r.squared
 
 print("r squared")
 summary(lm(ds.shortwave.comparison$avg.sw.hrly~ds.shortwave.comparison$rpot.adj))$r.squared
 print("sd")
-debiased.coefficients$sw[4] = sd(lm(ds.shortwave.comparison$avg.sw.hrly~ds.shortwave.comparison$rpot.adj)$residuals)
+debiased.coefficients$sw[4] = sd(lm(mean.ds.shortwave.comparison$avg.sw.hrly~mean.ds.shortwave.comparison$rpot.adj)$residuals)
 save(debiased.coefficients, file = paste(path.my.files,"debiased.coefficients.RData", sep = ""))
 ```
 

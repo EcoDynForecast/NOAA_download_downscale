@@ -1,25 +1,10 @@
-process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE){
+process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE, PLOT){
   #CONVERT GEFS DOWNLOADED FORECAST TO GLM
-  # rm(list = ls())
-  if (!"zoo" %in% installed.packages()) install.packages("zoo")
-  library(zoo)
-  if (!"imputeTS" %in% installed.packages()) install.packages("imputeTS")
-  library(imputeTS)
-  if (!"lubridate" %in% installed.packages()) install.packages("lubridate")
-  library(lubridate)
-  library(tidyr)
-  library(dplyr)
-  library(ggplot2)
-  path.my.files = "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/"
-  source(paste(path.my.files, "solar_geom.R", sep = ""))
-  source(paste(path.my.files, "daily_debias_from_coeff.R", sep = ""))
-  source(paste(path.my.files, "add_noise.R", sep = ""))
-  source(paste(path.my.files, "new_spline_NOAA_offset.R", sep = ""))
-  #process_GEFS2GLM <- function(in_directory,out_directory,file_name,input_tz = 'EST5EDT',output_tz = 'GMT'){
-  
-  # file_name = "20181118gep_all_00z" # temporary just to be able to run something
-  in_directory = "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/SCCData-noaa-data/"
-  out_directory = "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/met_output_files"
+  # #process_GEFS2GLM <- function(in_directory,out_directory,file_name,input_tz = 'EST5EDT',output_tz = 'GMT'){
+  # 
+  # # file_name = "20181118gep_all_00z" # temporary just to be able to run something
+  # in_directory = "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/SCCData-noaa-data/"
+  # out_directory = "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/met_output_files"
   
   f <- paste0(in_directory,'/',file_name,'.csv')
   # if(!file.exists(f)){
@@ -34,11 +19,12 @@ process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE){
   forecast.date_local <- as.POSIXct(d$forecast.date, tz = input_tz)
   d$forecast.date <- as.POSIXct(forecast.date_local, tz = output_tz)
   
-  ## LAURA'S CODE STARTS HERE    
-  ## get forecast into names, units for downscaling process
-  # DOWNSCALE_MET = FALSE
-  # ADD_NOISE = FALSE
-  nmembers = 10
+  full_time <- rep(NA,length(d$forecast.date)*6)
+  begin_step <- head(d$forecast.date,1)
+  end_step <- tail(d$forecast.date,1)
+  full_time <- seq(begin_step, end_step, by = "1 hour") # grid
+  
+  ## Laura's code starts here
   if(DOWNSCALE_MET){
     print("DOWNSCALE_MET = TRUE")
     forecast.data <- d %>%
@@ -72,7 +58,7 @@ process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE){
     load(file = paste(path.my.files,"debiased.coefficients.RData", sep = ""))
     if(ADD_NOISE){
       debiased <- daily_debias_from_coeff(daily_forecast, debiased.coefficients)
-      debiased <- add_noise(debiased, debiased.coefficients, nmembers = 10)
+      debiased <- add_noise(debiased, debiased.coefficients, nmembers = 15)
     }else{
       debiased <- daily_debias_from_coeff(daily_forecast, debiased.coefficients)
     }
@@ -140,19 +126,22 @@ process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE){
     ds_output[,"full_time"] = strftime(ds_output$full_time, format="%Y-%m-%d %H:%M")
     ds_output_plotting <- ds_output %>% dplyr::mutate(plotting_time = yday(full_time) + hour(full_time)/24)
     ggplot(data = ds_output, aes(AirTemp)) + geom_histogram()
-    ggplot() +
-      geom_line(data = ds_output_plotting, aes(x = plotting_time, y = AirTemp, group = interaction(NOAA.member,dscale.member)))
-    ggplot(data = ds_output, aes(WindSpeed)) + geom_histogram()
-    ggplot() +
-      geom_line(data = ds_output_plotting, aes(x = plotting_time, y = WindSpeed, group = interaction(NOAA.member,dscale.member)))
-    ggplot(data = ds_output, aes(RelHum)) + geom_histogram()
-    ggplot() +
-      geom_line(data = ds_output_plotting, aes(x = plotting_time, y = RelHum, group = interaction(NOAA.member,dscale.member)))
-    ggplot(data = ds_output, aes(ShortWave)) + geom_histogram()
-    ggplot() +
-      geom_line(data = ds_output_plotting, aes(x = plotting_time, y = ShortWave, group = interaction(NOAA.member,dscale.member)))
-    ds_output <- ds_output %>% mutate(AirTemp = AirTemp - 273.15,
-                                      RelHum = ifelse(RelHum > 100, 100, RelHum))
+    # ggplot() +
+    #   geom_line(data = ds_output_plotting, aes(x = plotting_time, y = AirTemp, group = interaction(NOAA.member,dscale.member)))
+    # ggplot(data = ds_output, aes(WindSpeed)) + geom_histogram()
+    # ggplot() +
+    #   geom_line(data = ds_output_plotting, aes(x = plotting_time, y = WindSpeed, group = interaction(NOAA.member,dscale.member)))
+    # ggplot(data = ds_output, aes(RelHum)) + geom_histogram()
+    # ggplot() +
+    #   geom_line(data = ds_output_plotting, aes(x = plotting_time, y = RelHum, group = interaction(NOAA.member,dscale.member)))
+    # ggplot(data = ds_output, aes(ShortWave)) + geom_histogram()
+    # ggplot() +
+    #   geom_line(data = ds_output_plotting, aes(x = plotting_time, y = ShortWave, group = interaction(NOAA.member,dscale.member)))
+    # ds_output <- ds_output %>% mutate(AirTemp = AirTemp - 273.15,
+    #                                   RelHum = ifelse(RelHum > 100, 100, RelHum))
+    if(PLOT){
+      print(ggplot(data = ds_output, aes(full_time, y =AirTemp)) + geom_line())
+    }
     if(ADD_NOISE){
       save(ds_output, file = '/Users/laurapuckett/Documents/Research/Fall 2018/my_files/ds_output.RData')
     }else{
@@ -161,11 +150,14 @@ process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE){
     }
   }else{ # DOWNSCALE_MET = FALSE
     print("DOWNSCALE_MET = FALSE")
-    full_time <- rep(NA,length(d$forecast.date)*6)
+    ## This section is Quinn's Code using "out of box" version
     ShortWave = array(NA,dim=c(length(full_time),21))
+    LongWave = array(NA,dim=c(length(full_time),21))
     AirTemp = array(NA,dim=c(length(full_time),21))
     RelHum =array(NA,dim=c(length(full_time),21))
     WindSpeed= array(NA,dim=c(length(full_time),21))
+    Rain = array(NA,dim=c(length(full_time),21))
+    Snow = array(0,dim=c(length(full_time),21))
     for(NOAA.ens in 1:21){
       for(i in 1:length(full_time)){
         index = which(d$forecast.date == full_time[i] & d$ensembles == NOAA.ens)
@@ -195,7 +187,7 @@ process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE){
     }
     for(NOAA.ens in 1:21){
       #ShortWave[,NOAA.ens] = na.interpolation(ShortWave[,NOAA.ens], option = "spline")
-      #LongWave[,NOAA.ens] = na.interpolation(LongWave[,NOAA.ens], option = "linear")
+      LongWave[,NOAA.ens] = na.interpolation(LongWave[,NOAA.ens], option = "linear")
       AirTemp[,NOAA.ens] = na.interpolation(AirTemp[,NOAA.ens], option = "linear")
       RelHum[,NOAA.ens] = na.interpolation(RelHum[,NOAA.ens], option = "linear")
       WindSpeed[,NOAA.ens] = na.interpolation(WindSpeed[,NOAA.ens], option = "linear")
@@ -205,19 +197,13 @@ process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE){
       #rain_not_na = which(!is.na(Rain[,NOAA.ens]))  
       #Rain[rain_na[1]:rain_not_na[1]-1,NOAA.ens] = Rain[rain_not_na[1],NOAA.ens]
     }
-    AirTemp <- AirTemp - 273.15
+    # AirTemp <- AirTemp - 273.15
     Rain <- Rain*60*60*24 #convert to mm/day
     Rain <- Rain*0.001
   }
   
-  full_time <- rep(NA,length(d$forecast.date)*6)
-  
-  begin_step <- head(d$forecast.date,1)
-  end_step <- tail(d$forecast.date,1)
-  full_time <- seq(begin_step, end_step, by = "1 hour") # grid
-  
   # ShortWave = array(NA,dim=c(length(full_time),21))
-  LongWave = array(NA,dim=c(length(full_time),21))
+  # LongWave = array(NA,dim=c(length(full_time),21))
   # AirTemp = array(NA,dim=c(length(full_time),21))
   # RelHum =array(NA,dim=c(length(full_time),21))
   # WindSpeed= array(NA,dim=c(length(full_time),21))
@@ -228,23 +214,6 @@ process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE){
     for(i in 1:length(full_time)){
       index = which(d$forecast.date == full_time[i] & d$ensembles == NOAA.ens)
       if(length(index) > 0){
-        # if(d$dswrfsfc[index] < 3000){
-        #   ShortWave[(i-6):(i-1),NOAA.ens] =  d$dswrfsfc[index]
-        # }
-        if(d$dlwrfsfc[index] < 3000){
-          LongWave[(i-6):(i-1),NOAA.ens] = d$dlwrfsfc[index]
-        }
-        # if(d$tmp2m[index] < 3000){
-        #   AirTemp[i,NOAA.ens] = d$tmp2m[index]
-        # }
-        # if(d$rh2m[index] < 3000){
-        #   RelHum[i,NOAA.ens] =  d$rh2m[index]
-        # }
-        # uwind = d$ugrd10m[index]
-        # vwind= d$vgrd10m[index]
-        # if(uwind < 3000 & vwind < 3000){
-        #   WindSpeed[i,NOAA.ens] = sqrt(uwind^2 + vwind^2)
-        # }
         if(d$pratesfc[index] < 3000){
           Rain[(i-6):(i-1),NOAA.ens] = d$pratesfc[index]
         }
@@ -256,7 +225,6 @@ process_GEFS2GLM_v2 <- function(file_name, DOWNSCALE_MET, ADD_NOISE){
   # Rain <- Rain*60*60*24 #convert to mm/day
   # Rain <- Rain*0.001
   #kg/m2/s to m/day
-  
   
   # format: one dataframe for each enesmble member combination
   #Save in GLM Format
