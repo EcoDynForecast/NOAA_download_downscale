@@ -35,15 +35,15 @@ START_TIME = "2018-11-18 00:19:00 UTC"
 END_TIME = "2018-12-02 00:19:00 UTC"
 ```
 
-```{r average daily performance over 14 days withheld}
-sum.CI.1day.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+```{r out of box, 1 day}
+sum.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
                                       r2 = rep(0,5),
-                                      mean.residual = rep(NA,5),
+                                      mean.residual = rep(0,5),
                                       CI.90 = rep(0,5),
                                       CI.95 = rep(0,5),
                                       CI.100 = rep(0,5))
 
-mean.CI.1day.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+mean.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
                                       r2 = rep(NA,5),
                                       mean.residual = rep(NA,5),
                                       CI.90 = rep(NA,5),
@@ -53,39 +53,99 @@ count = 0
 for (i in 0:13){
   table.i = assess_downscaling(start_time = as_datetime(START_TIME) + 24*60*60 * i,
                                end_time = as_datetime(START_TIME) +  24*60*60 * (i + 1),
-                               DOWNSCALE_MET = TRUE, ADD_NOISE = FALSE, PLOT = FALSE, PRINT = FALSE) # iterating one day at a time, 1-day intervals
-  CI.1day.table.i = data_frame(metric = c("temp","RH","ws","sw","lw"),
+                               DOWNSCALE_MET = FALSE, ###
+                               ADD_NOISE = FALSE,
+                               PLOT = FALSE,
+                               PRINT = FALSE) # iterating one day at a time, 1-day intervals
+  for(n in 1:nrow(table.i)){
+    for(m in 2:ncol(table.i)){
+      sum.table[n,m] = sum.table[n,m] + table.i[n,m]
+    }
+  }
+  count = count + 1
+}
+  for(n in 1:nrow(sum.table)){
+    for(m in 2:ncol(sum.table)){
+      mean.table[n,m] = sum.table[n,m]/count
+    }
+  }
+
+out.of.box.1.day = mean.table
+```
+```{r ds no noise, 1 day}
+sum.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+                                      r2 = rep(0,5),
+                                      mean.residual = rep(0,5),
+                                      CI.90 = rep(0,5),
+                                      CI.95 = rep(0,5),
+                                      CI.100 = rep(0,5))
+
+mean.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
                                       r2 = rep(NA,5),
                                       mean.residual = rep(NA,5),
                                       CI.90 = rep(NA,5),
                                       CI.95 = rep(NA,5),
                                       CI.100 = rep(NA,5))
+count = 0
+for (i in 0:13){
+  table.i = assess_downscaling(start_time = as_datetime(START_TIME) + 24*60*60 * i,
+                               end_time = as_datetime(START_TIME) +  24*60*60 * (i + 1),
+                               DOWNSCALE_MET = TRUE, ###
+                               ADD_NOISE = FALSE, ###
+                               PLOT = FALSE,
+                               PRINT = FALSE) # iterating one day at a time, 1-day intervals
   for(n in 1:nrow(table.i)){
     for(m in 2:ncol(table.i)){
-      sum.1day.table[n,m] = sum.1day.table[n,m] + table.i[n,m]
+      sum.table[n,m] = sum.table[n,m] + table.i[n,m]
     }
   }
-  for(n in 1:nrow(CI.1day.table.i)){
-    for(m in 2:ncol(CI.1day.table.i)){
-      sum.CI.1day.table[n,m] = sum.CI.1day.table[n,m] + CI.1day.table.i[n,m]
-    }
-  }
-  
   count = count + 1
 }
-  for(n in 1:nrow(sum.1day.table)){
-    for(m in 2:ncol(sum.1day.table)){
-      mean.1day.table[n,m] = sum.1day.table[n,m]/count
+  for(n in 1:nrow(sum.table)){
+    for(m in 2:ncol(sum.table)){
+      mean.table[n,m] = sum.table[n,m]/count
     }
   }
-  for(n in 1:nrow(sum.CI.1day.table)){
-    for(m in 2:ncol(sum.CI.1day.table)){
-      mean.CI.1day.table = sum.CI.1day.table/count
-    }
-  }
-print(mean.1day.table)
-print(sum.CI.1day.table)
 
+ds.no.noise.1.day = mean.table
+```
+
+```{r ds with noise, 1 day}
+sum.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+                                      r2 = rep(0,5),
+                                      mean.residual = rep(0,5),
+                                      CI.90 = rep(0,5),
+                                      CI.95 = rep(0,5),
+                                      CI.100 = rep(0,5))
+
+mean.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+                                      r2 = rep(NA,5),
+                                      mean.residual = rep(NA,5),
+                                      CI.90 = rep(NA,5),
+                                      CI.95 = rep(NA,5),
+                                      CI.100 = rep(NA,5))
+count = 0
+for (i in 0:13){
+  table.i = assess_downscaling(start_time = as_datetime(START_TIME) + 24*60*60 * i,
+                               end_time = as_datetime(START_TIME) +  24*60*60 * (i + 1),
+                               DOWNSCALE_MET = TRUE, ###
+                               ADD_NOISE = TRUE, ###
+                               PLOT = FALSE,
+                               PRINT = FALSE) # iterating one day at a time, 1-day intervals
+  for(n in 1:nrow(table.i)){
+    for(m in 2:ncol(table.i)){
+      sum.table[n,m] = sum.table[n,m] + table.i[n,m]
+    }
+  }
+  count = count + 1
+}
+  for(n in 1:nrow(sum.table)){
+    for(m in 2:ncol(sum.table)){
+      mean.table[n,m] = sum.table[n,m]/count
+    }
+  }
+
+ds.with.noise.1.day = mean.table
 ```
 
 
