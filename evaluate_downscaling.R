@@ -3,8 +3,7 @@ evaluate_downscaling <- function(start_time, end_time, DOWNSCALE_MET, ADD_NOISE,
   
   ## OBSERVATIONAL DATA
   obs.data <- read.csv(paste('/Users/laurapuckett/Documents/Research/Fall 2018/', "my_files/", "FCRmet.csv", sep = ""), header = TRUE)
-  obs.units.match = prep_obs(obs.data)
-  obs.units.match <- obs.units.match %>%
+  obs.units.match = prep_obs(obs.data) %>%
     # max air temp record in Vinton, VA is 40.6 C 
     # coldest air temp on record in Vinton, Va is -23.9 C
     # http://www.climatespy.com/climate/summary/united-states/virginia/roanoke-regional 
@@ -14,8 +13,6 @@ evaluate_downscaling <- function(start_time, end_time, DOWNSCALE_MET, ADD_NOISE,
                   SR01Up_Avg = ifelse(SR01Up_Avg < 0, 0, SR01Up_Avg),
                   IR01DnCo_Avg = ifelse(IR01DnCo_Avg <0, NA, IR01DnCo_Avg),
                   IR01DnCo_Avg = ifelse(month(timestamp) > 6 & month(timestamp) < 10 & IR01DnCo_Avg < 410,NA,IR01DnCo_Avg)) %>%
-    filter(as_datetime(timestamp) > as_datetime(start_time)) %>%
-    filter(as_datetime(timestamp) < as_datetime(end_time)) %>%
     dplyr::mutate(hour = hour(timestamp),
                   date = date(timestamp)) %>%
     dplyr::mutate(timestamp = as_datetime(paste(date, " ", hour, ":","00:00", sep = ""), tz = "UTC"))
@@ -39,7 +36,7 @@ evaluate_downscaling <- function(start_time, end_time, DOWNSCALE_MET, ADD_NOISE,
                            paste("0",day(start_time),sep = ""),
                            day(start_time)),
                     "gep_all_00z", sep = "")
-  process_GEFS2GLM_v2(file_name, DOWNSCALE_MET = DOWNSCALE_MET, ADD_NOISE = ADD_NOISE, PLOT = PLOT)
+  process_GEFS2GLM_v2(start_time = start_time, end_time = end_time, file_name = file_name, DOWNSCALE_MET = DOWNSCALE_MET, ADD_NOISE = ADD_NOISE, PLOT = PLOT)
   if(DOWNSCALE_MET){
     if(ADD_NOISE){
       load(file = '/Users/laurapuckett/Documents/Research/Fall 2018/my_files/ds_output.RData')
@@ -49,32 +46,14 @@ evaluate_downscaling <- function(start_time, end_time, DOWNSCALE_MET, ADD_NOISE,
       output = ds_output_no_noise
     }
     output <- output %>% plyr::rename(c("full_time" = "timestamp")) %>%
-      mutate(timestamp = as_datetime(paste(timestamp, ':00', sep = "")))
+      mutate(timestamp = as_datetime(paste(timestamp, ':00', sep = ""))) %>%
+      mutate(timestamp = as_datetime(timestamp) - 60*60*1)
   }else{
-    full_time.df = as.data.frame(full_time)
-    LongWave.df = as.data.frame(LongWave) %>% cbind(full_time.df) %>%
-      gather(NOAA.member, LongWave, V1:V21)
-    # Rain.df = as.data.frame(Rain)  %>% cbind(full_time.df) %>%
-    #   gather(NOAA.member, Rain, V1:V21)
-    # Snow.df = as.data.frame(Snow)  %>% cbind(full_time.df) %>%
-    #   gather(NOAA.member, Snow, V1:V21)
-    AirTemp.df = as.data.frame(AirTemp) %>% cbind(full_time.df) %>%
-      gather(NOAA.member, AirTemp, V1:V21)
-    WindSpeed.df = as.data.frame(WindSpeed)  %>% cbind(full_time.df) %>%
-      gather(NOAA.member, WindSpeed, V1:V21)
-    RelHum.df = as.data.frame(RelHum)  %>% cbind(full_time.df) %>%
-      gather(NOAA.member, RelHum, V1:V21)
-    ShortWave.df = as.data.frame(ShortWave) %>% cbind(full_time.df) %>%
-      gather(NOAA.member, ShortWave, V1:V21)
-    
-    output = LongWave.df %>%
-      inner_join(AirTemp.df, by = c("full_time","NOAA.member")) %>%
-      inner_join(WindSpeed.df, by = c("full_time","NOAA.member")) %>%
-      inner_join(RelHum.df, by = c("full_time","NOAA.member")) %>%
-      inner_join(ShortWave.df, by = c("full_time","NOAA.member")) %>%
-      dplyr::mutate(NOAA.member = as.integer(str_replace(NOAA.member, "V",""))) %>%
-      plyr::rename(c("full_time" = "timestamp")) %>%
-        dplyr::mutate(timestamp = as_datetime(paste(timestamp, ":00", sep = "")))
+    load(file = '/Users/laurapuckett/Documents/Research/Fall 2018/my_files/out_of_box.RData')
+    output <- out_of_box %>%
+      mutate(timestamp = as_datetime(timestamp),
+             LongWave = LongWave/24)
+
   }
   summary.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
                              r2 = rep(NA,5),
@@ -144,10 +123,11 @@ evaluate_downscaling <- function(start_time, end_time, DOWNSCALE_MET, ADD_NOISE,
   
   formula = lm(mean.joined$daily_IR01DnCo_Avg ~ mean.joined$LongWave)
   summary.table[5,2] = summary(lm(formula))$r.squared
-  summary.table[5,3] = mean(lm(formula)$residuals)
+  summary.table[5,3] = mean(mean.joined$daily_IR01DnCo_Avg - mean.joined$LongWave, na.rm = TRUE)
   summary.table[5,4] = check_CI(df = joined, obs.col.name = "daily_IR01DnCo_Avg", for.col.name = "LongWave")$check.90.pcnt
   summary.table[5,5] = check_CI(df = joined, obs.col.name = "daily_IR01DnCo_Avg", for.col.name = "LongWave")$check.95.pcnt
   summary.table[5,6] = check_CI(df = joined, obs.col.name = "daily_IR01DnCo_Avg", for.col.name = "LongWave")$check.100.pcnt
+  
   if(PRINT){
     print(summary.table)
   }
@@ -160,6 +140,13 @@ evaluate_downscaling <- function(start_time, end_time, DOWNSCALE_MET, ADD_NOISE,
     print(ggplot(data = mean.joined, aes(x = timestamp)) +
             geom_line(aes(y = ShortWave, color = "ds")) + 
             geom_line(aes(y = SR01Up_Avg, color = "obs")))
+    print(ggplot(data = joined, aes(x = timestamp)) +
+            geom_line(aes(y = LongWave, color = "ds")) + 
+            geom_line(aes(y = daily_IR01DnCo_Avg, color = "obs")))
+    print(ggplot(data = joined, aes(x = timestamp)) +
+            geom_line(aes(y = RelHum, color = "ds")) + 
+            geom_line(aes(y = RH, color = "obs")))
+
   }
   return(summary.table)
 }
