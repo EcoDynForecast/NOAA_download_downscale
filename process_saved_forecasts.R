@@ -14,17 +14,28 @@
 # @param data.path: path to SCCData-noaa-data folder, which contains 16-day NOAA forecasts (.csv) saved on many days
 # -----------------------------------
 process_saved_forecasts <- function(data.path){
+  
+  # -----------------------------------
+  # 0. Load data, initialize variables
+  # -----------------------------------
   forecast.files.list = list.files(data.path)
   num.ensembles = 21 # there are 21 ensemble members in GEFS forecasts
   st <- as.Date("2018-04-23") # start of available data for FCR site
   en <- as.Date(Sys.Date()) 
-  date.list <- seq(st, en, by = "1 day")
-  date.list <- force_tz(as_datetime(date.list), "EST")
   flux.forecasts = NULL
   state.forecasts = NULL
   
-  # 1. pull first day of forecasts from all dates unless data is missing for a day
-  #
+  # -----------------------------------
+  # 1. Make list of all expected dates to obtain forecast files from
+  # -----------------------------------
+  
+  date.list <- seq(st, en, by = "1 day")
+  date.list <- force_tz(as_datetime(date.list), "EST")
+  
+  # -----------------------------------
+  # 2. Get forecast data for first day of each saved file (if data is missing for a day, print notice of missing data)
+  # -----------------------------------
+  
   for(i in 1:length(date.list)){
     date.path = NULL
     temp.data = NULL
@@ -51,7 +62,7 @@ process_saved_forecasts <- function(data.path){
       tmp.state <- tmp.data %>%
         filter(as_datetime(forecast.date.hour) <= as_datetime(date.list[i] + 15*60*60, tz = "US/Eastern")) %>%
         select(ensembles, tmp2m, rh2m, vgrd10m, ugrd10m, forecast.date.hour, NOAA.file.group)
-      # for states, select data between 1st hour and 20th hour of day to obtain first 4 measurements with data (measurement from previous day is NA because flux is average over past 6 hr period and has no values until 2nd 6-hour period)   
+      # for fluxes, select data between 1st hour and 20th hour of day to obtain first 4 measurements with data (measurement from previous day is NA because flux is average over past 6 hr period and has no values until 2nd 6-hour period)   
       tmp.flux <- tmp.data %>%
         filter(as_datetime(forecast.date.hour) >= as_datetime(date.list[i] + 1*60*60, tz = "US/Eastern") &
                  as_datetime(forecast.date.hour) <= as_datetime(date.list[i] + 20*60*60, tz = "US/Eastern")) %>%
@@ -64,6 +75,11 @@ process_saved_forecasts <- function(data.path){
     }
     
   }
+  
+  # -----------------------------------
+  # 3. Save flux and state dataframes as Rdata
+  # -----------------------------------
+  
   saveRDS(flux.forecasts, file = paste(path.working,"NOAA.flux.forecasts", sep = ""))
   saveRDS(state.forecasts, file = paste(path.working,"NOAA.state.forecasts", sep = ""))
 }
