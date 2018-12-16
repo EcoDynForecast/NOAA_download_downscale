@@ -9,25 +9,26 @@ spline_to_hourly <- function(redistributed){
     result <- splinefun(jday, var, method = "monoH.FC")
     return(result(seq(min(as.numeric(jday)), max(as.numeric(jday)), 1/24)))
   }
-  by.ens <- redistributed %>% 
-    group_by(NOAA.member, dscale.member) %>%
-    mutate(jday = julian(timestamp, origin = "1970-01-01 00:00:00"))
-  # convert to julian day (jday) temporarily to interpolate between times
   
-  interp.df.jday <- by.ens %>% do(jday = seq(as.numeric(min(julian(redistributed$timestamp, origin = "1970-01-01 00:00:00"))), as.numeric(max(julian(redistributed$timestamp, origin = "1970-01-01 00:00:00"))), 1/24))
-  interp.df.temp <- do(by.ens, interp.temp = interpolate(.$jday,.$ds.temp))
-  interp.df.ws <- do(by.ens, interp.ws = interpolate(.$jday,.$ds.ws))
-  interp.df.RH <- do(by.ens, interp.RH = interpolate(.$jday,.$ds.RH))
-  interp.df <- inner_join(interp.df.jday, interp.df.temp, by = c("NOAA.member","dscale.member")) %>%
+  time0 = as_datetime(min(redistributed$timestamp), tz = "US/Eastern")
+  redistributed <- redistributed %>%
+    mutate(days_since_t0 = difftime(.$timestamp, time0, units = "days"))
+  
+  by.ens <- redistributed %>% 
+    group_by(NOAA.member, dscale.member)
+    
+  interp.df.days <- by.ens %>% do(days = seq(min(redistributed$days_since_t0), as.numeric(max(redistributed$days_since_t0)), 1/24))
+  interp.df.temp <- do(by.ens, interp.temp = interpolate(.$days_since_t0,.$ds.temp))
+  interp.df.ws <- do(by.ens, interp.ws = interpolate(.$days_since_t0,.$ds.ws))
+  interp.df.RH <- do(by.ens, interp.RH = interpolate(.$days_since_t0,.$ds.RH))
+  interp.df <- inner_join(interp.df.days, interp.df.temp, by = c("NOAA.member","dscale.member")) %>%
     inner_join(interp.df.ws, by = c("NOAA.member","dscale.member")) %>%
     inner_join(interp.df.RH,  by = c("NOAA.member","dscale.member")) %>%
     unnest()
   
-  # converting from julian days back to timestamp
+  # converting from time difference back to timestamp
   interp.df  = interp.df %>%
-    dplyr::mutate(date = as.Date(jday, origin = as.Date("1970-01-01")),
-                hour = round((jday - as.integer(jday))*24,0),
-                timestamp = as_datetime(paste(date, " ", hour, ":","00:00", sep = ""), tz = "US/Eastern"))
+    dplyr::mutate(timestamp = as_datetime(time0 + days, tz = "US/Eastern"))
 
   return(interp.df)
 }

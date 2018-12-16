@@ -1,3 +1,9 @@
+# --------------------------------------
+# purpose: save coefficients from linear debiasing and temporal downscaling
+# Creator: Laura Puckett, December 16 2018
+# contact: plaura1@vt.edu
+# --------------------------------------
+
 rm(list = ls())
 ## setup
 path.working <- "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/"
@@ -214,6 +220,7 @@ joined.hrly.obs.and.ds <- inner_join(hrly.flux.obs, hrly.state.obs, by = "timest
 # -----------------------------------
 # 7. Calculate and save coefficients from hourly downscaling (R2 and standard deviation of residuals)
 # -----------------------------------
+
 model = lm(joined.hrly.obs.and.ds$AirTK_Avg ~ joined.hrly.obs.and.ds$interp.temp)
 debiased.coefficients[5,1] = sd(residuals(model))
 debiased.coefficients[6,1] = summary(model)$r.squared
@@ -222,7 +229,7 @@ model = lm(joined.hrly.obs.and.ds$RH ~ joined.hrly.obs.and.ds$interp.RH)
 debiased.coefficients[5,2] = sd(residuals(model))
 debiased.coefficients[6,2] = summary(model)$r.squared
 
-model = lm(joined.hrly.obs.and.ds$ ~ joined.hrly.obs.and.ds$interp.ws)
+model = lm(joined.hrly.obs.and.ds$WS_ms_Avg ~ joined.hrly.obs.and.ds$interp.ws)
 debiased.coefficients[5,3] = sd(residuals(model))
 debiased.coefficients[6,3] = summary(model)$r.squared
 
@@ -235,7 +242,28 @@ debiased.coefficients[5,5] = sd(residuals(model))
 debiased.coefficients[6,5] = summary(model)$r.squared
 save(debiased.coefficients, file = paste(path.working,"debiased.coefficients.RData", sep = ""))
 
+# -----------------------------------
+# 7. Visual check (comparing observations and downscaled forecast ensemble mean)
+# -----------------------------------
 
+ggplot(data = joined.hrly.obs.and.ds[1:500,], aes(x = timestamp)) +
+  geom_line(aes(y = AirTK_Avg, color = "observations"))+
+  geom_line(aes(y = interp.temp, color = "downscaled forecast average"))
 
+ggplot(data = joined.hrly.obs.and.ds[1:500,], aes(x = timestamp)) +
+  geom_line(aes(y = RH, color = "observations"))+
+  geom_line(aes(y = interp.RH, color = "downscaled forecast average"))
 
+ggplot(data = joined.hrly.obs.and.ds[1:500,], aes(x = timestamp)) +
+  geom_line(aes(y = WS_ms_Avg, color = "observations"))+
+  geom_line(aes(y = interp.ws, color = "downscaled forecast average"))
+
+ggplot(data = joined.hrly.obs.and.ds[1:500,], aes(x = timestamp)) +
+  geom_line(aes(y = SR01Up_Avg, color = "observations"))+
+  geom_line(aes(y = hrly.sw.ds, color = "downscaled forecast average"))
+
+ggplot(data = joined.hrly.obs.and.ds[1:500,], aes(x = timestamp)) +
+  geom_line(aes(y = IR01UpCo_Avg, color = "observations"))+
+  geom_line(aes(y = ds.lw, color = "downscaled forecast average"))
+  
 
