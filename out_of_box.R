@@ -67,7 +67,7 @@ out_of_box <- function(d, forecast.date){
   ShortWave.df = as.data.frame(ShortWave) %>% cbind(full_time.df) %>%
     gather(NOAA.member, ShortWave, V1:V21)
   
-  out_of_box = LongWave.df %>%
+  out.of.box = LongWave.df %>%
     inner_join(AirTemp.df, by = c("full_time","NOAA.member")) %>%
     inner_join(WindSpeed.df, by = c("full_time","NOAA.member")) %>%
     inner_join(RelHum.df, by = c("full_time","NOAA.member")) %>%
@@ -76,6 +76,6 @@ out_of_box <- function(d, forecast.date){
     plyr::rename(c("full_time" = "timestamp")) %>%
     dplyr::mutate(timestamp = as_datetime(timestamp))
   save(out_of_box, file = '/Users/laurapuckett/Documents/Research/Fall 2018/my_files/out_of_box.RData')
-  return(out_of_box) 
+  return(out.of.box) 
 }
 

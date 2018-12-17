@@ -1,0 +1,373 @@
+---
+title: "evaluate_downscaling"
+output: html_document
+---
+```{r}
+  rm(list = ls())
+  if (!"zoo" %in% installed.packages()) install.packages("zoo")
+  library(zoo)
+  if (!"imputeTS" %in% installed.packages()) install.packages("imputeTS")
+  library(imputeTS)
+  if (!"lubridate" %in% installed.packages()) install.packages("lubridate")
+  library(lubridate)
+  library(tidyr)
+  library(dplyr)
+  library(ggplot2)
+  library(stringr) # used in evaluate_downscaling to create filename
+  library(dplyr)
+  path.my.files = "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/"
+  source(paste(path.my.files, "solar_geom.R", sep = ""))
+  source(paste(path.my.files, "daily_debias_from_coeff.R", sep = ""))
+  source(paste(path.my.files, "add_noise.R", sep = ""))
+  source(paste(path.my.files, "new_spline_NOAA_offset.R", sep = ""))
+  source("/Users/laurapuckett/Documents/Research/Fall 2018/my_files/prep_obs.R")
+  source("/Users/laurapuckett/Documents/Research/Fall 2018/my_files/check_CI.R")
+  source("/Users/laurapuckett/Documents/Research/Fall 2018/my_files/evaluate_downscaling.R")
+  source("/Users/laurapuckett/Documents/Research/Fall 2018/my_files/process_GEFS2GLM_v2.R")
+
+  
+
+  #process_GEFS2GLM <- function(in_directory,out_directory,file_name,input_tz = 'EST5EDT',output_tz = 'GMT'){
+  
+  # file_name = "20181118gep_all_00z" # temporary just to be able to run something
+  in_directory = "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/SCCData-noaa-data/"
+  out_directory = "/Users/laurapuckett/Documents/Research/Fall 2018/my_files/met_output_files"
+```
+
+```{r setup, include=FALSE}
+START_TIME = "2018-11-18 19:00:00 UTC"
+END_TIME = "2018-12-04 19:00:00 UTC"
+```
+```{r}
+ ## OBSERVATIONAL DATA
+  obs.data <- read.csv(paste('/Users/laurapuckett/Documents/Research/Fall 2018/', "my_files/", "FCRmet.csv", sep = ""), header = TRUE)
+  obs.units.match = prep_obs(obs.data) %>%
+    # max air temp record in Vinton, VA is 40.6 C 
+    # coldest air temp on record in Vinton, Va is -23.9 C
+    # http://www.climatespy.com/climate/summary/united-states/virginia/roanoke-regional 
+    # lots of bad data for longwave between 8/23/2018 and 9/11/2018 randomly for a couple minutes at a       # time. Removing entire section of data for now. Also bad data on a few other days
+    dplyr::mutate(AirTK_Avg = ifelse(AirTK_Avg > 273.15 + 41, NA, AirTK_Avg),
+                  AirTK_Avg = ifelse(AirTK_Avg < 273.15 -23.9, NA, AirTK_Avg),
+                  SR01Up_Avg = ifelse(SR01Up_Avg < 0, 0, SR01Up_Avg),
+                  IR01UpCo_Avg = ifelse(IR01UpCo_Avg <0, NA, IR01UpCo_Avg),
+                  IR01UpCo_Avg = ifelse(month(timestamp) > 6 & month(timestamp) < 10 & IR01UpCo_Avg < 410,NA,IR01UpCo_Avg)) %>%
+    dplyr::mutate(hour = hour(timestamp),
+                  date = date(timestamp)) %>%
+    dplyr::mutate(timestamp = as_datetime(paste(date, " ", hour, ":","00:00", sep = ""), tz = "UTC"))
+  
+  hrly.obs.units.match <- obs.units.match %>%
+    dplyr::group_by(timestamp) %>%
+    dplyr::summarize(AirTK_Avg = mean(AirTK_Avg, na.rm = TRUE),
+                     SR01Up_Avg = mean(SR01Up_Avg),
+                     IR01UpCo_Avg = mean(IR01UpCo_Avg),
+                     WS_ms_Avg = mean(WS_ms_Avg),
+                     RH = mean(RH)) %>%
+    ungroup()
+  #   dplyr::mutate(timestamp = as_datetime(paste(date, " ", hour, ":","00:00", sep = ""), tz = "US/Eastern"))
+```
+  
+
+```{r out of box, 1 day}
+sum.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+                                      r2 = rep(0,5),
+                                      mean.residual = rep(0,5),
+                                      CI.90 = rep(0,5),
+                                      CI.95 = rep(0,5),
+                                      CI.100 = rep(0,5))
+
+mean.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+                                      r2 = rep(NA,5),
+                                      mean.residual = rep(NA,5),
+                                      CI.90 = rep(NA,5),
+                                      CI.95 = rep(NA,5),
+                                      CI.100 = rep(NA,5))
+count = 0
+for (i in 0:14){ # 15
+  table.i = evaluate_downscaling(obs.units.match,
+                                 hrly.obs.units.match,
+                                 start_time = as_datetime(START_TIME) + 24*60*60 * i,
+                               end_time = as_datetime(START_TIME) +  24*60*60 * (i + 1),
+                               DOWNSCALE_MET = FALSE, ###
+                               ADD_NOISE = FALSE,
+                               PLOT = FALSE,
+                               PRINT = FALSE) # iterating one day at a time, 1-day intervals
+  for(n in 1:nrow(table.i)){
+    for(m in 2:ncol(table.i)){
+      sum.table[n,m] = sum.table[n,m] + table.i[n,m]
+    }
+  }
+  count = count + 1
+}
+  for(n in 1:nrow(sum.table)){
+    for(m in 2:ncol(sum.table)){
+      mean.table[n,m] = sum.table[n,m]/count
+    }
+  }
+
+out.of.box.1.day = mean.table
+out.of.box.1.day 
+```
+
+```{r ds no noise, 1 day}
+sum.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+                                      r2 = rep(0,5),
+                                      mean.residual = rep(0,5),
+                                      CI.90 = rep(0,5),
+                                      CI.95 = rep(0,5),
+                                      CI.100 = rep(0,5))
+
+mean.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+                                      r2 = rep(NA,5),
+                                      mean.residual = rep(NA,5),
+                                      CI.90 = rep(NA,5),
+                                      CI.95 = rep(NA,5),
+                                      CI.100 = rep(NA,5))
+count = 0
+for (i in 0:14){
+  table.i = evaluate_downscaling(obs.units.match,
+                                 hrly.obs.units.match,
+                                 start_time = as_datetime(START_TIME) + 24*60*60 * i,
+                               end_time = as_datetime(START_TIME) +  24*60*60 * (i + 1),
+                               DOWNSCALE_MET = TRUE, ###
+                               ADD_NOISE = FALSE, ###
+                               PLOT = FALSE,
+                               PRINT = FALSE) # iterating one day at a time, 1-day intervals
+  for(n in 1:nrow(table.i)){
+    for(m in 2:ncol(table.i)){
+      sum.table[n,m] = sum.table[n,m] + table.i[n,m]
+    }
+  }
+  count = count + 1
+}
+  for(n in 1:nrow(sum.table)){
+    for(m in 2:ncol(sum.table)){
+      mean.table[n,m] = sum.table[n,m]/count
+    }
+  }
+
+ds.no.noise.1.day = mean.table
+ds.no.noise.1.day
+```
+
+```{r ds with noise, 1 day}
+sum.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+                                      r2 = rep(0,5),
+                                      mean.residual = rep(0,5),
+                                      CI.90 = rep(0,5),
+                                      CI.95 = rep(0,5),
+                                      CI.100 = rep(0,5))
+
+mean.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+                                      r2 = rep(NA,5),
+                                      mean.residual = rep(NA,5),
+                                      CI.90 = rep(NA,5),
+                                      CI.95 = rep(NA,5),
+                                      CI.100 = rep(NA,5))
+agg.df = data.frame(NULL)
+count = 0
+for (i in 0:14){
+  eval.results <-  evaluate_downscaling(obs.units.match,
+                                 hrly.obs.units.match,
+                                 start_time = as_datetime(START_TIME) + 24*60*60 * i,
+                               end_time = as_datetime(START_TIME) +  24*60*60 * (i + 1),
+                               DOWNSCALE_MET = TRUE, ###
+                               ADD_NOISE = TRUE, ###
+                               PLOT = FALSE,
+                               PRINT = FALSE) # iterating one day at a time, 1-day intervals
+  table.i = eval.results[[2]]
+  cur.df = eval.results[[1]]
+  mean.cur.df = eval.results[[3]]
+    if(i == 0){
+    agg.df = cur.df
+    mean.agg.df = mean.cur.df
+  }else{
+    agg.df = rbind(cur.df, agg.df)
+    mean.agg.df = rbind(mean.cur.df, mean.agg.df)
+  }
+
+  
+  for(n in 1:nrow(table.i)){
+    for(m in 2:ncol(table.i)){
+      sum.table[n,m] = sum.table[n,m] + table.i[n,m]
+    }
+  }
+  count = count + 1
+}
+  for(n in 1:nrow(sum.table)){
+    for(m in 2:ncol(sum.table)){
+      mean.table[n,m] = sum.table[n,m]/count
+    }
+  }
+
+ds.with.noise.1.day = mean.table
+ds.with.noise.1.day
+```
+```{r}
+    p1 <-ggplot(data = agg.df, aes(x = timestamp)) +
+      # geom_point(aes(y = AirTemp.ds, color = "ds")) +
+      geom_line(aes(y = AirTemp - 273.15, color = "Downscaled", group = interaction(NOAA.member, dscale.member)), alpha = 0.3) +
+      geom_point(aes(y = AirTK_Avg - 273.15, color = "Site Observations")) + 
+      geom_line(aes(y = AirTK_Avg - 273.15, color = "Site Observations")) + 
+      ylab("Air Temperature (Degrees Celsius)")+
+      xlab("")+
+      theme_bw()+
+      theme(text = element_text(size = 14), legend.position="bottom") +
+      # scale_color_brewer(palette = "Dark2")
+      scale_color_manual(values = c("firebrick2","black"))
+
+ ggplot(data = mean.agg.df, aes(x = AirTK_Avg - 273.15, y = AirTemp - 273.15)) +
+      geom_point()+
+      geom_abline(slope = 1, intercept = 0, size = 1.5) +
+      ylab("Downscaled") +
+      xlab("Site Observations")+
+      ggtitle("Air Temperature (Degrees C)")+
+      theme_bw()+
+      theme(text = element_text(size = 14), legend.position="bottom") 
+
+p2 <-ggplot(data = agg.df, aes(x = timestamp)) +
+      geom_line(aes(y = ShortWave, color = "Downscaled",  group = interaction(NOAA.member, dscale.member)), size = 1, alpha = 0.2) + 
+      geom_line(aes(y = SR01Up_Avg, color = "Site Observations"), size = 1) +
+      # geom_point(aes(y = ShortWave, color = "Downscaled")) + 
+      geom_point(aes(y = SR01Up_Avg, color = "Site Observations")) +
+      ylab("Shortwave Radiation (W/m2)")+
+      xlab("") +
+      theme_bw() +
+      theme(text = element_text(size = 14), legend.position="bottom") +
+      scale_color_manual(values = c("firebrick2","black"))
+
+ ggplot(data = mean.agg.df, aes(x = SR01Up_Avg, y = ShortWave)) +
+      geom_point()+
+      geom_abline(slope = 1, intercept = 0, size = 1.5) +
+      ylab("Downscaled") +
+      xlab("Site Observations")+
+      ggtitle("Shortwave Radiation (W/m2)") +
+      theme_bw()+
+      theme(text = element_text(size = 14)) 
+    
+p3 <-ggplot(data = agg.df, aes(x = timestamp)) +
+      geom_line(aes(y = LongWave, color = "Downscaled",group = interaction(NOAA.member, dscale.member)), size = 1, alpha = 0.4) + 
+      geom_line(aes(y = daily_IR01UpCo_Avg, color = "Site Observations")) + 
+      ylab("Longwave Radiation (W/m2)")+
+      xlab("") +
+      theme_bw() +
+      theme(text = element_text(size = 14), legend.position="bottom") +
+      scale_color_manual(values = c("firebrick2","black"))
+
+ ggplot(data = mean.agg.df, aes(x = daily_IR01UpCo_Avg, y = LongWave)) +
+      geom_point()+
+      geom_abline(slope = 1, intercept = 0, size = 1.5) +
+      ylab("Downscaled") +
+      xlab("Site Observations")+
+      ggtitle("Longwave Radiation (W/m2)")+
+      theme_bw()+
+      theme(text = element_text(size = 14), legend.position="bottom") 
+    
+    
+p4 <-ggplot(data = agg.df, aes(x = timestamp)) +
+      geom_line(aes(y = RelHum, color = "Downscaled", group = interaction(NOAA.member, dscale.member)), size = 1, alpha = 0.2) + 
+      geom_line(aes(y = RH, color = "Site Observations")) + 
+      geom_point(aes(y = RH, color = "Site Observations")) + 
+      ylab("Relative Humidity (%)")+
+      xlab("")+
+      theme_bw()+
+      theme(text = element_text(size = 14), legend.position="bottom") +
+  scale_color_manual(values = c("firebrick2","black"))
+
+
+ ggplot(data = mean.agg.df, aes(x = RH, y = RelHum)) +
+      geom_point()+
+      geom_abline(slope = 1, intercept = 0, size = 1.5) +
+      ylab("Downscaled") +
+      xlab("Site Observations")+
+      ggtitle("Relative Humidity (%)")+
+      theme_bw()+
+      theme(text = element_text(size = 14), legend.position="bottom") 
+
+p5 <- ggplot(data = agg.df, aes(x = timestamp)) +
+  geom_line(aes(y = WindSpeed, color = "Downscaled", group = interaction(NOAA.member, dscale.member)), size = 1, alpha = 0.3) + 
+  geom_line(aes(y = WS_ms_Avg, color = "Site Observations")) + 
+ # geom_point(aes(y = WindSpeed, color = "Downscaled")) + 
+  geom_point(aes(y = WS_ms_Avg, color = "Site Observations")) + 
+  ylab("Wind Speed (m/s)")+
+  xlab("")+
+  theme_bw()+
+  theme(text = element_text(size = 14), legend.position="bottom") +
+  scale_color_manual(values = c("firebrick2","black"))
+
+ ggplot(data = mean.agg.df, aes(x = WS_ms_Avg, y = WindSpeed)) +
+      geom_point()+
+      geom_abline(slope = 1, intercept = 0, size = 1.5) +
+      ylab("Downscaled") +
+      xlab("Site Observations")+
+      ggtitle("Wind Speed (m/s)")+
+      theme_bw()+
+      theme(text = element_text(size = 14), legend.position="bottom") 
+```
+```{r 16 day performance}
+out.of.box.16.days = evaluate_downscaling(obs.units.match,
+                                 hrly.obs.units.match,
+                                 start_time = "2018-11-18 00:19:00 UTC",
+                             end_time = "2018-12-02 00:19:00 UTC",
+                             DOWNSCALE_MET = FALSE, ###
+                             ADD_NOISE = TRUE,
+                             PLOT = FALSE,
+                             PRINT = TRUE)
+
+ds.no.noise.16.days = evaluate_downscaling(obs.units.match,
+                                 hrly.obs.units.match,
+                                 start_time = "2018-11-18 00:19:00 UTC",
+                             end_time = "2018-12-02 00:19:00 UTC",
+                             DOWNSCALE_MET = TRUE, ###
+                             ADD_NOISE = FALSE, ###
+                             PLOT = FALSE, ##
+                             PRINT = TRUE)
+
+ds.with.noise.16.days = evaluate_downscaling(obs.units.match,
+                                 hrly.obs.units.match,
+                             start_time = "2018-11-18 00:19:00 UTC",
+                             end_time = "2018-12-02 00:19:00 UTC",
+                             DOWNSCALE_MET = TRUE, ###
+                             ADD_NOISE = TRUE, ###
+                             PLOT = TRUE,
+                             PRINT = TRUE)
+
+out.of.box.16.days
+ds.no.noise.16.days
+ds.with.noise.16.days
+```
+
+old.results = results
+sum.3day.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+                                      r2 = rep(0,5),
+                                      mean.residual = rep(0,5),
+                                      CI.90 = rep(0,5),
+                                      CI.95 = rep(0,5),
+                                      CI.100 = rep(0,5))
+mean.3day.table = data_frame(metric = c("temp","RH","ws","sw","lw"),
+                                      r2 = rep(NA,5),
+                                      mean.residual = rep(NA,5),
+                                      CI.90 = rep(NA,5),
+                                      CI.95 = rep(NA,5),
+                                      CI.100 = rep(NA,5))
+count = 0
+for (i in 0:12){ # once I load in more data, this should be 16 days not 13
+  table.i = evaluate_downscaling(start_time = as_datetime(START_TIME) + 24*60*60 * i,
+                               end_time = as_datetime(START_TIME) +  24*60*60 * (i + 3),
+                               DOWNSCALE_MET = TRUE,
+                               ADD_NOISE = FALSE,
+                               PLOT = FALSE,
+                               PRINT = TRUE) # iterating one day at a time, 3-day intervals
+  for(n in 1:nrow(sum.3day.table)){
+    for(m in 2:ncol(sum.3day.table)){
+      sum.3day.table[n,m] = sum.3day.table[n,m] + table.i[n,m]
+    }
+  }
+  count = count + 1
+}
+  for(n in 1:nrow(sum.3day.table)){
+    for(m in 2:ncol(sum.3day.table)){
+      mean.3day.table[n,m] = sum.3day.table[n,m]/count
+    }
+  }
+print(mean.3day.table)
+

@@ -4,10 +4,11 @@
 # contact: plaura1@vt.edu
 # --------------------------------------
 
+run_future_downscaling <- function(d){
+
 # -----------------------------------
 # 2. change forecast units
 # -----------------------------------
-run_future_downscaling <- function(d, forecast.date, forecast.units.match, path.working){
   forecast.data <- d %>%
     dplyr::mutate(timestamp = as_datetime(forecast.date, tz = "US/Eastern")) %>%
     plyr::rename(c("ensembles" = "NOAA.member"))
@@ -21,9 +22,9 @@ run_future_downscaling <- function(d, forecast.date, forecast.units.match, path.
                   RH = rh2m) %>%
     select(NOAA.member, timestamp, temp, avg.lw, avg.sw, precip.rate, RH, ws)
   
-  # -----------------------------------
-  # 3. Aggregate forecast to daily resolution
-  # -----------------------------------
+# -----------------------------------
+# 3. Aggregate forecast to daily resolution
+# -----------------------------------
   
   daily_forecast = forecast.units.match %>%
     dplyr::mutate(date = date(timestamp)) %>%
@@ -38,15 +39,15 @@ run_future_downscaling <- function(d, forecast.date, forecast.units.match, path.
   
   # need to add in statement here for if(CALCULATE_DEBIAS_COEFFICIENTS){}
   
-  # -----------------------------------
-  # 4. do linear debiasing at daily resolution
-  # -----------------------------------
+# -----------------------------------
+# 4. do linear debiasing at daily resolution
+# -----------------------------------
   
   debiased <- daily_debias_from_coeff(daily_forecast, debiased.coefficients)
   
-  # -----------------------------------
-  # 5.a. temporal downscaling step (a): redistribute to 6-hourly resolution
-  # -----------------------------------
+# -----------------------------------
+# 5.a. temporal downscaling step (a): redistribute to 6-hourly resolution
+# -----------------------------------
   
   NOAA.prop <- forecast.units.match %>%
     dplyr::mutate(date = date(timestamp)) %>%
@@ -70,9 +71,9 @@ run_future_downscaling <- function(d, forecast.date, forecast.units.match, path.
     ungroup() %>%
     select(NOAA.member, timestamp, ds.temp, ds.RH, ds.ws, ds.lw)
   
-  # -----------------------------------
-  # 5.b. temporal downscaling step (b): temporally downscale from 6-hourly to hourly
-  # -----------------------------------
+# -----------------------------------
+# 5.b. temporal downscaling step (b): temporally downscale from 6-hourly to hourly
+# -----------------------------------
   
   ## downscale states to hourly resolution (air temperature, relative humidity, average wind speed) 
   states.ds.hrly = spline_to_hourly(redistributed)
@@ -116,9 +117,9 @@ run_future_downscaling <- function(d, forecast.date, forecast.units.match, path.
     dplyr::mutate(hrly.sw.ds = ifelse(avg.rpot > 0, sw.mod * (rpot/avg.rpot),0)) %>%
     select(timestamp, NOAA.member, hrly.sw.ds)
   
-  # -----------------------------------
-  # 6. join hourly observations and hourly debiased forecasts
-  # -----------------------------------
+# -----------------------------------
+# 6. join hourly observations and hourly debiased forecasts
+# -----------------------------------
   
   joined.ds <- full_join(states.ds.hrly, sw.ds, by = c("timestamp","NOAA.member")) %>%
     full_join(lw.hrly, by = c("timestamp","NOAA.member")) %>%
