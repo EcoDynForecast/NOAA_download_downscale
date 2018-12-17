@@ -15,15 +15,15 @@ spline_to_hourly <- function(redistributed){
     mutate(days_since_t0 = difftime(.$timestamp, time0, units = "days"))
   
   by.ens <- redistributed %>% 
-    group_by(NOAA.member, dscale.member)
+    group_by(NOAA.member)
     
   interp.df.days <- by.ens %>% do(days = seq(min(redistributed$days_since_t0), as.numeric(max(redistributed$days_since_t0)), 1/24))
   interp.df.temp <- do(by.ens, interp.temp = interpolate(.$days_since_t0,.$ds.temp))
   interp.df.ws <- do(by.ens, interp.ws = interpolate(.$days_since_t0,.$ds.ws))
   interp.df.RH <- do(by.ens, interp.RH = interpolate(.$days_since_t0,.$ds.RH))
-  interp.df <- inner_join(interp.df.days, interp.df.temp, by = c("NOAA.member","dscale.member")) %>%
-    inner_join(interp.df.ws, by = c("NOAA.member","dscale.member")) %>%
-    inner_join(interp.df.RH,  by = c("NOAA.member","dscale.member")) %>%
+  interp.df <- inner_join(interp.df.days, interp.df.temp, by = c("NOAA.member")) %>%
+    inner_join(interp.df.ws, by = c("NOAA.member")) %>%
+    inner_join(interp.df.RH,  by = c("NOAA.member")) %>%
     unnest()
   
   # converting from time difference back to timestamp

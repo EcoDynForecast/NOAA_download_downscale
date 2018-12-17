@@ -136,7 +136,7 @@ redistributed <- inner_join(debiased, NOAA.prop, by = c("date","NOAA.member")) %
                 ds.ws = ws.mod + ws.prop,
                 ds.lw = lw.mod + lw.prop) %>% 
   ungroup() %>%
-  select(NOAA.member, timestamp, dscale.member, ds.temp, ds.RH, ds.ws, ds.lw)
+  select(NOAA.member, timestamp, ds.temp, ds.RH, ds.ws, ds.lw)
 
 # -----------------------------------
 # 5.b. temporal downscaling step (b): temporally downscale from 6-hourly to hourly
@@ -167,8 +167,8 @@ sw.hours <- debiased %>%
   tidyr::expand(hour = 0:23)
 
 sw.ds <- debiased %>% 
-  select(sw.mod, dscale.member, NOAA.member, date) %>%
-  dplyr::group_by(NOAA.member, date, dscale.member) %>%
+  select(sw.mod, NOAA.member, date) %>%
+  dplyr::group_by(NOAA.member, date) %>%
   full_join(sw.hours, by = c("NOAA.member","date")) %>%
   ungroup() %>%
   dplyr::mutate(timestamp = as_datetime(paste(date, " ", hour, ":","00:00", sep = ""), tz = "US/Eastern")) %>%
