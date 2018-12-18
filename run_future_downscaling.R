@@ -44,12 +44,13 @@ run_future_downscaling <- function(d){
 # -----------------------------------
   
   debiased <- daily_debias_from_coeff(daily_forecast, debiased.coefficients)
+  debiased[which(debiased$date == min(debiased$date)),]$sw.mod = debiased[which(debiased$date == min(debiased$date) + 1),]$sw.mod # hack to give sw values for 1st day (that are in fact the values for the second day). This is to avoid having NAs for the first few hours of forecast
   
 # -----------------------------------
 # 5.a. temporal downscaling step (a): redistribute to 6-hourly resolution
 # -----------------------------------
   
-  NOAA.prop <- forecast.units.match %>%
+  NOAA.6hr.adj <- forecast.units.match %>%
     dplyr::mutate(date = date(timestamp)) %>%
     group_by(NOAA.member, date) %>%
     dplyr::mutate(temp.daily.mean = mean(temp, na.rm = FALSE),
@@ -57,17 +58,17 @@ run_future_downscaling <- function(d){
                   ws.daily.mean = mean(ws, na.rm = FALSE),
                   lw.daily.mean = mean(avg.lw, na.rm = FALSE)) %>%
     ungroup() %>%
-    mutate(temp.prop = temp - temp.daily.mean, # deviation from daily mean that each 6-hourly forecast was
-           RH.prop = RH - RH.daily.mean,
-           ws.prop = ws - ws.daily.mean,
-           lw.prop = avg.lw - lw.daily.mean) %>%
-    select(NOAA.member, date, timestamp, temp.prop, RH.prop, ws.prop, lw.prop)
+    mutate(temp.adj = temp - temp.daily.mean, # deviation from daily mean that each 6-hourly forecast was
+           RH.adj = RH - RH.daily.mean,
+           ws.adj = ws - ws.daily.mean,
+           lw.adj = avg.lw - lw.daily.mean) %>%
+    select(NOAA.member, date, timestamp, temp.adj, RH.adj, ws.adj, lw.adj)
   
-  redistributed <- inner_join(debiased, NOAA.prop, by = c("date","NOAA.member")) %>%
-    dplyr::mutate(ds.temp = temp.mod + temp.prop,
-                  ds.RH = RH.mod + RH.prop,
-                  ds.ws = ws.mod + ws.prop,
-                  ds.lw = lw.mod + lw.prop) %>% 
+  redistributed <- inner_join(debiased, NOAA.6hr.adj, by = c("date","NOAA.member")) %>%
+    dplyr::mutate(ds.temp = temp.mod + temp.adj,
+                  ds.RH = RH.mod + RH.adj,
+                  ds.ws = ws.mod + ws.adj,
+                  ds.lw = lw.mod + lw.adj) %>% 
     ungroup() %>%
     select(NOAA.member, timestamp, ds.temp, ds.RH, ds.ws, ds.lw)
   
@@ -79,7 +80,10 @@ run_future_downscaling <- function(d){
   states.ds.hrly = spline_to_hourly(redistributed)
   # if filtering out incomplete days, that would need to happen here
   
-  ## convert longwave to hourly (just copy 6 hourly values over past 6-hour time period)
+  timestamp.start = min(redistributed$timestamp) # beginning of forecast
+  timestamp.end = max(redistributed$timestamp) # end of forecast
+  
+  ## convert longwave to hourly (just copy 6 hourly values over past 6-hour time period and remove first 6 hours to match time span of forecast)
   lw.hrly <- redistributed %>%
     select(timestamp, NOAA.member, ds.lw) %>%
     group_by(timestamp, NOAA.member, ds.lw) %>%
@@ -89,7 +93,9 @@ run_future_downscaling <- function(d){
                          as_datetime(timestamp - 3*60*60, tz = "US/Eastern"),
                          as_datetime(timestamp - 4*60*60, tz = "US/Eastern"),
                          as_datetime(timestamp - 5*60*60, tz = "US/Eastern"))) %>%
-    ungroup()
+    ungroup() %>%
+    filter(timestamp >= timestamp.start)
+  lw.hrly[which(lw.hrly$timestamp == timestamp.start),]$ds.lw = lw.hrly[which(lw.hrly$timestamp == timestamp.start+6*60*60),]$ds.lw # hack to make 1st measurement (which is currently = na) equal to the first forecasted value 
   
   ## downscale shortwave to hourly
   lat = 37.307
@@ -115,8 +121,9 @@ run_future_downscaling <- function(d){
     dplyr::mutate(avg.rpot = mean(rpot)) %>% # daily sw mean from solar geometry
     ungroup() %>%
     dplyr::mutate(hrly.sw.ds = ifelse(avg.rpot > 0, sw.mod * (rpot/avg.rpot),0)) %>%
-    select(timestamp, NOAA.member, hrly.sw.ds)
-  
+    select(timestamp, NOAA.member, hrly.sw.ds) %>%
+    filter(timestamp >= timestamp.start & timestamp <= timestamp.end)
+    
 # -----------------------------------
 # 6. join hourly observations and hourly debiased forecasts
 # -----------------------------------
