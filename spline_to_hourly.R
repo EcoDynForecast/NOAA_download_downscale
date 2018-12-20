@@ -16,20 +16,20 @@ spline_to_hourly <- function(redistributed){
   
   by.ens <- redistributed %>% 
     group_by(NOAA.member)
-    
-  interp.df.days <- by.ens %>% do(days = seq(min(redistributed$days_since_t0), as.numeric(max(redistributed$days_since_t0)), 1/24))
-  interp.df.temp <- do(by.ens, interp.temp = interpolate(.$days_since_t0,.$ds.temp))
-  interp.df.ws <- do(by.ens, interp.ws = interpolate(.$days_since_t0,.$ds.ws))
-  interp.df.RH <- do(by.ens, interp.RH = interpolate(.$days_since_t0,.$ds.RH))
-  interp.df <- inner_join(interp.df.days, interp.df.temp, by = c("NOAA.member")) %>%
-    inner_join(interp.df.ws, by = c("NOAA.member")) %>%
-    inner_join(interp.df.RH,  by = c("NOAA.member")) %>%
-    unnest()
   
+  interp.df.days <- by.ens %>% do(days = seq(min(redistributed$days_since_t0), as.numeric(max(redistributed$days_since_t0)), 1/24))
+  interp.df <- interp.df.days
+  
+  for(Var in 1:length(VarNamesStates)){
+    assign(paste0("interp.df.",VarNamesStates[Var]), do(by.ens, var = interpolate(.$days_since_t0,unlist(.[,VarNamesStates[Var]]))) %>% plyr::rename(c("var" = VarNamesStates[Var])))
+    interp.df <- inner_join(interp.df, get(paste0("interp.df.",VarNamesStates[Var])), by = c("NOAA.member"))
+  }
+
   # converting from time difference back to timestamp
   interp.df  = interp.df %>%
+    unnest %>%
     dplyr::mutate(timestamp = as_datetime(time0 + days, tz = "US/Eastern"))
-
+  
   return(interp.df)
 }
 

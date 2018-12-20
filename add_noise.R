@@ -4,10 +4,10 @@ debiased.with.noise <- debiased %>%
   expand(dscale.member = 1:nmembers) %>%
   ungroup() %>%
   group_by(dscale.member, NOAA.member) %>%
-  dplyr::mutate(AirTemp = AirTemp + rnorm(mean = 0, sd = coeff.df$temp[5], n = 1),
-                RelHum = RelHum + rnorm(mean = 0, sd = coeff.df$RH[5], n = 1),
-                WindSpeed = WindSpeed + rnorm(mean = 0, sd = coeff.df$ws[5], n = 1),
-                ShortWave = ShortWave + rnorm(mean = 0, sd = coeff.df$sw[5], n = 1),
-                LongWave = LongWave + rnorm(mean = 0, sd = coeff.df$lw[5], n = 1)) %>%
+  dplyr::mutate(AirTemp = AirTemp + rnorm(mean = 0, sd = coeff.df$AirTemp[5], n = 1),
+                RelHum = RelHum + rnorm(mean = 0, sd = coeff.df$RelHum[5], n = 1),
+                WindSpeed = WindSpeed + rnorm(mean = 0, sd = coeff.df$WindSpeed[5], n = 1),
+                ShortWave = ShortWave + rnorm(mean = 0, sd = coeff.df$ShortWave[3], n = 1),
+                LongWave = LongWave + rnorm(mean = 0, sd = coeff.df$LongWave[5], n = 1)) %>%
   ungroup() %>%
   select(timestamp, dscale.member, NOAA.member, AirTemp, RelHum, WindSpeed, ShortWave,  LongWave)

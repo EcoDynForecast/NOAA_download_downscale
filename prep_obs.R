@@ -5,6 +5,7 @@ prep_obs <- function(obs.data){
   # --------------------------------------
   
   obs.units.match <- obs.data %>%
+    plyr::rename(replaceObsNames) %>%
     dplyr::mutate(date = as.Date(TIMESTAMP, format = '%m/%d/%y')) %>%
     separate(TIMESTAMP, c("date.extra","time")," ", convert = TRUE) %>%
     dplyr::mutate(yday = lubridate::yday(date)) %>%
@@ -12,9 +13,8 @@ prep_obs <- function(obs.data){
     dplyr::mutate(timestamp = as_datetime(paste(date, " ", hour, ":", minute,":00", sep = ""),
                                           tz = "US/Eastern")) %>%
     dplyr::mutate(date = as_date(date),
-           precip_rate = Rain_mm_Tot/60) %>%
-           mutate(AirTK_Avg = AirTC_Avg + 273.15) %>% # convert from C to Kelvin
-    select(timestamp, AirTK_Avg, RH, WS_ms_Avg, SR01Up_Avg, IR01UpCo_Avg, precip_rate)
-  
-  return(obs.units.match)
+                  AirTemp = AirTemp + 273.15) %>% # convert from C to Kelvin
+  select(timestamp, VarNames)
+
+return(obs.units.match)
 }

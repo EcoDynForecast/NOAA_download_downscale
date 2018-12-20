@@ -4,77 +4,40 @@
 # contact: plaura1@vt.edu
 # --------------------------------------
 
-run_future_downscaling <- function(d){
-
 # -----------------------------------
 # 2. change forecast units
 # -----------------------------------
-  forecast.data <- d %>%
-    dplyr::mutate(timestamp = as_datetime(forecast.date, tz = "US/Eastern")) %>%
-    plyr::rename(c("ensembles" = "NOAA.member"))
-  NOAA.na.value = 999900000000000000000
-  forecast.units.match <- forecast.data %>%
-    dplyr::mutate(temp = tmp2m,
-                  ws = sqrt(vgrd10m^2 + ugrd10m^2),
-                  avg.lw = ifelse(dlwrfsfc==NOAA.na.value, NA,dlwrfsfc),
-                  avg.sw = ifelse(dswrfsfc==NOAA.na.value, NA,dswrfsfc),
-                  precip.rate = ifelse( pratesfc==NOAA.na.value, NA,  pratesfc),
-                  RH = rh2m) %>%
-    select(NOAA.member, timestamp, temp, avg.lw, avg.sw, precip.rate, RH, ws)
+forecasts <- prep_for(d)
+forecasts[which(forecasts$timestamp == min(forecasts$timestamp)),]$ShortWave = forecasts[which(forecasts$timestamp == min(forecasts$timestamp) + 24*60*60),]$ShortWave
+# hack to give sw values for 1st measurement (that are in fact the values for the second day). This is to avoid having NAs for the first few hours of forecast
+forecasts[which(forecasts$timestamp == min(forecasts$timestamp)),]$LongWave = forecasts[which(forecasts$timestamp == min(forecasts$timestamp) + 6*60*60),]$LongWave
+# hack to give lw values for 1st measurement (that are in fact the values of the next measurement, 6 hours later). This is to avoid having NAs for the first few hours of forecast
+
+run_future_downscaling <- function(forecasts){
+
   
-# -----------------------------------
-# 3. Aggregate forecast to daily resolution
-# -----------------------------------
+  # -----------------------------------
+  # 3. Aggregate forecast to daily resolution
+  # -----------------------------------
   
-  daily_forecast = forecast.units.match %>%
-    dplyr::mutate(date = date(timestamp)) %>%
-    group_by(NOAA.member, date) %>%
-    dplyr::summarize(temp = mean(temp, na.rm = FALSE),
-                     ws = mean(ws, na.rm = FALSE),
-                     RH = mean(RH, na.rm = FALSE),
-                     lw = mean(avg.lw, na.rm = FALSE),
-                     sw = mean(avg.sw, na.rm = FALSE),
-                     precip.rate = mean(precip.rate, na.rm = FALSE)) %>%
-    ungroup()
-  
+  daily.forecast = aggregate_to_daily(forecasts)
   # need to add in statement here for if(CALCULATE_DEBIAS_COEFFICIENTS){}
   
-# -----------------------------------
-# 4. do linear debiasing at daily resolution
-# -----------------------------------
+  # -----------------------------------
+  # 4. do linear debiasing at daily resolution
+  # -----------------------------------
   
-  debiased <- daily_debias_from_coeff(daily_forecast, debiased.coefficients)
-  debiased[which(debiased$date == min(debiased$date)),]$sw.mod = debiased[which(debiased$date == min(debiased$date) + 1),]$sw.mod # hack to give sw values for 1st day (that are in fact the values for the second day). This is to avoid having NAs for the first few hours of forecast
+  debiased <- daily_debias_from_coeff(daily.forecast, debiased.coefficients)
   
-# -----------------------------------
-# 5.a. temporal downscaling step (a): redistribute to 6-hourly resolution
-# -----------------------------------
+  # -----------------------------------
+  # 5.a. temporal downscaling step (a): redistribute to 6-hourly resolution
+  # -----------------------------------
   
-  NOAA.6hr.adj <- forecast.units.match %>%
-    dplyr::mutate(date = date(timestamp)) %>%
-    group_by(NOAA.member, date) %>%
-    dplyr::mutate(temp.daily.mean = mean(temp, na.rm = FALSE),
-                  RH.daily.mean = mean(RH, na.rm = FALSE),
-                  ws.daily.mean = mean(ws, na.rm = FALSE),
-                  lw.daily.mean = mean(avg.lw, na.rm = FALSE)) %>%
-    ungroup() %>%
-    mutate(temp.adj = temp - temp.daily.mean, # deviation from daily mean that each 6-hourly forecast was
-           RH.adj = RH - RH.daily.mean,
-           ws.adj = ws - ws.daily.mean,
-           lw.adj = avg.lw - lw.daily.mean) %>%
-    select(NOAA.member, date, timestamp, temp.adj, RH.adj, ws.adj, lw.adj)
+  redistributed = daily_to_6hr(forecasts)
   
-  redistributed <- inner_join(debiased, NOAA.6hr.adj, by = c("date","NOAA.member")) %>%
-    dplyr::mutate(ds.temp = temp.mod + temp.adj,
-                  ds.RH = RH.mod + RH.adj,
-                  ds.ws = ws.mod + ws.adj,
-                  ds.lw = lw.mod + lw.adj) %>% 
-    ungroup() %>%
-    select(NOAA.member, timestamp, ds.temp, ds.RH, ds.ws, ds.lw)
-  
-# -----------------------------------
-# 5.b. temporal downscaling step (b): temporally downscale from 6-hourly to hourly
-# -----------------------------------
+  # -----------------------------------
+  # 5.b. temporal downscaling step (b): temporally downscale from 6-hourly to hourly
+  # -----------------------------------
   
   ## downscale states to hourly resolution (air temperature, relative humidity, average wind speed) 
   states.ds.hrly = spline_to_hourly(redistributed)
@@ -84,31 +47,29 @@ run_future_downscaling <- function(d){
   timestamp.end = max(redistributed$timestamp) # end of forecast
   
   ## convert longwave to hourly (just copy 6 hourly values over past 6-hour time period and remove first 6 hours to match time span of forecast)
-  lw.hrly <- redistributed %>%
-    select(timestamp, NOAA.member, ds.lw) %>%
-    group_by(timestamp, NOAA.member, ds.lw) %>%
+  LongWave.hrly <- redistributed %>%
+    select(timestamp, NOAA.member, LongWave) %>%
+    group_by(timestamp, NOAA.member, LongWave) %>%
     expand(timestamp = c(as_datetime(timestamp - 0*60*60, tz = "US/Eastern"),
                          as_datetime(timestamp - 1*60*60, tz = "US/Eastern"),
                          as_datetime(timestamp - 2*60*60, tz = "US/Eastern"),
                          as_datetime(timestamp - 3*60*60, tz = "US/Eastern"),
                          as_datetime(timestamp - 4*60*60, tz = "US/Eastern"),
                          as_datetime(timestamp - 5*60*60, tz = "US/Eastern"))) %>%
-    ungroup() %>%
-    filter(timestamp >= timestamp.start)
-  lw.hrly[which(lw.hrly$timestamp == timestamp.start),]$ds.lw = lw.hrly[which(lw.hrly$timestamp == timestamp.start+6*60*60),]$ds.lw # hack to make 1st measurement (which is currently = na) equal to the first forecasted value 
+    ungroup()
   
   ## downscale shortwave to hourly
   lat = 37.307
   lon = 360-79.837
   
-  sw.hours <- debiased %>%
+  ShortWave.hours <- debiased %>%
     dplyr::group_by(NOAA.member, date) %>%
     tidyr::expand(hour = 0:23)
   
-  sw.ds <- debiased %>% 
-    select(sw.mod, NOAA.member, date) %>%
+  ShortWave.ds <- debiased %>% 
+    select(ShortWave, NOAA.member, date) %>%
     dplyr::group_by(NOAA.member, date) %>%
-    full_join(sw.hours, by = c("NOAA.member","date")) %>%
+    full_join(ShortWave.hours, by = c("NOAA.member","date")) %>%
     ungroup() %>%
     dplyr::mutate(timestamp = as_datetime(paste(date, " ", hour, ":","00:00", sep = ""), tz = "US/Eastern")) %>%
     dplyr::mutate(doy = yday(date) + hour/24) %>%
@@ -120,21 +81,17 @@ run_future_downscaling <- function(d){
     dplyr::group_by(date) %>%
     dplyr::mutate(avg.rpot = mean(rpot)) %>% # daily sw mean from solar geometry
     ungroup() %>%
-    dplyr::mutate(hrly.sw.ds = ifelse(avg.rpot > 0, sw.mod * (rpot/avg.rpot),0)) %>%
-    select(timestamp, NOAA.member, hrly.sw.ds) %>%
-    filter(timestamp >= timestamp.start & timestamp <= timestamp.end)
-    
-# -----------------------------------
-# 6. join hourly observations and hourly debiased forecasts
-# -----------------------------------
+    dplyr::mutate(ShortWave = ifelse(avg.rpot > 0, ShortWave * (rpot/avg.rpot),0)) %>%
+    select(timestamp, NOAA.member, ShortWave)
   
-  joined.ds <- full_join(states.ds.hrly, sw.ds, by = c("timestamp","NOAA.member")) %>%
-    full_join(lw.hrly, by = c("timestamp","NOAA.member")) %>%
-    plyr::rename(c("interp.temp" = "AirTemp",
-                   "interp.ws" = "WindSpeed",
-                   "interp.RH" = "RelHum",
-                   "hrly.sw.ds" = "ShortWave",
-                   "ds.lw" = "LongWave"))
+  
+  # -----------------------------------
+  # 6. join hourly debiased forecasts
+  # -----------------------------------
+  
+  joined.ds <- full_join(states.ds.hrly, ShortWave.ds, by = c("timestamp","NOAA.member"), suffix = c(".obs",".ds")) %>%
+    full_join(LongWave.hrly, by = c("timestamp","NOAA.member"), suffix = c(".obs",".ds")) 
   return(joined.ds)
 }
-#### need to determine whether or not NOAA.member should be carried through this process and fix it
+
+

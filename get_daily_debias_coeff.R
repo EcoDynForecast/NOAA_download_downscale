@@ -5,7 +5,7 @@ get_daily_debias_coeff <- function(joined.data){
   # --------------------------------------
   
   get_lm_coeff <- function(col.obs, col.for){
-    model = lm(col.obs ~ col.for)
+    model = lm(unlist(col.obs) ~ unlist(col.for))
     intercept = model$coefficients[1]
     slope = model$coefficients[2]
     res.sd = sd(residuals(model))
@@ -13,15 +13,15 @@ get_daily_debias_coeff <- function(joined.data){
     return(list(intercept, slope, res.sd, r2))
   }
   
-  df = data_frame(temp = rep(NA,6), RH = rep(NA,6), ws = rep(NA,6), sw = rep(NA,6), lw = rep(NA,6))
+  df = data.frame(matrix(NA, ncol = length(VarNames), nrow = 6))
+  colnames(df) = VarNames
   
-  for (i in 1:4){
-    df$temp[i] = get_lm_coeff(joined.data$temp.obs, joined.data$temp.for)[[i]]
-    df$RH[i] = get_lm_coeff(joined.data$RH.obs, joined.data$RH.for)[[i]]
-    df$ws[i] = get_lm_coeff(joined.data$ws.obs, joined.data$ws.for)[[i]]
-    df$sw[i] = get_lm_coeff(joined.data$sw.obs, joined.data$sw.for)[[i]]
-    df$lw[i] = get_lm_coeff(joined.data$lw.obs, joined.data$lw.for)[[i]]
+  for (rowNum in 1:4){
+    for(colNum in 1:length(VarNames)){
+      df[rowNum, VarNames[colNum]] = get_lm_coeff(joined.data[,paste0(VarNames[colNum],".obs")], joined.data[,paste0(VarNames[colNum],".for")])[[rowNum]]
+    }
   }
+   
   df = as.data.frame(df) 
   row.names(df) <- c("intercept", "slope", "sd.res.daily", "r2.daily", "ds.res.hourly", "r2.hourly")
   # could convert to key column later instead of row,column

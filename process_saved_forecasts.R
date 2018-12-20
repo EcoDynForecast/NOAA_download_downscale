@@ -56,17 +56,17 @@ process_saved_forecasts <- function(data.path){
     if(paste(date.path,"gep_all_00z.csv", sep = "")%in% forecast.files.list){
       full.path = paste(data.path, date.path,"gep_all_00z.csv", sep = "")
       tmp.data = read.csv(full.path) %>% 
-        mutate(forecast.date.hour = force_tz(as.POSIXct(strptime(forecast.date, "%Y-%m-%d %H:%M:%S")), "US/Eastern"),
+        mutate(forecast.date = force_tz(as.POSIXct(strptime(forecast.date, "%Y-%m-%d %H:%M:%S")), "US/Eastern"),
                NOAA.file.group = i) # group number for which file the data is from
       # for states, select data up until 15th hour of day to obtain first 4 measurements (1 measurement is from previous date)
       tmp.state <- tmp.data %>%
-        filter(as_datetime(forecast.date.hour) <= as_datetime(date.list[i] + 15*60*60, tz = "US/Eastern")) %>%
-        select(ensembles, tmp2m, rh2m, vgrd10m, ugrd10m, forecast.date.hour, NOAA.file.group)
+        filter(as_datetime(forecast.date) <= as_datetime(date.list[i] + 15*60*60, tz = "US/Eastern")) %>%
+        select(ensembles, tmp2m, rh2m, vgrd10m, ugrd10m, forecast.date, NOAA.file.group)
       # for fluxes, select data between 1st hour and 20th hour of day to obtain first 4 measurements with data (measurement from previous day is NA because flux is average over past 6 hr period and has no values until 2nd 6-hour period)   
       tmp.flux <- tmp.data %>%
-        filter(as_datetime(forecast.date.hour) >= as_datetime(date.list[i] + 1*60*60, tz = "US/Eastern") &
-                 as_datetime(forecast.date.hour) <= as_datetime(date.list[i] + 20*60*60, tz = "US/Eastern")) %>%
-        select(ensembles, pratesfc, dlwrfsfc, dswrfsfc, forecast.date.hour, NOAA.file.group)
+        filter(as_datetime(forecast.date) >= as_datetime(date.list[i] + 1*60*60, tz = "US/Eastern") &
+                 as_datetime(forecast.date) <= as_datetime(date.list[i] + 20*60*60, tz = "US/Eastern")) %>%
+        select(ensembles, pratesfc, dlwrfsfc, dswrfsfc, forecast.date, NOAA.file.group)
       
       flux.forecasts = rbind(flux.forecasts, tmp.flux)
       state.forecasts = rbind(state.forecasts, tmp.state)
