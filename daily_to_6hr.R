@@ -1,4 +1,4 @@
-daily_to_6hr <- function(forecasts){
+daily_to_6hr <- function(forecasts, daily.forecast, debiased){
   forecasts <- forecasts %>%
     dplyr::mutate(date = date(timestamp))
   deviations <- full_join(daily.forecast, forecasts, by = c("date","NOAA.member"), suffix = c(".daily",".6hr"))
