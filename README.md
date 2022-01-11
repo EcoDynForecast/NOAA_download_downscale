@@ -1,5 +1,8 @@
 # NOAA_download_downscale
-author: Laura Puckett (plaura1@vt.edu)
- This is a repository for files related to the spatial and temporal downscaling of NOAA GEFS data for use in the forecasting  of water quality at Falling Creek Reservoir, Virginia. The files here are still far from finalized - the goal for completion is January 2019. At that time everything should be much more readable!
+Files related to the spatial and temporal downscaling of NOAA GEFS data for use in the forecasting  of water quality at Falling Creek Reservoir, Virginia
 
- run_downscaling.R runs the downscaling process and calls all other required functions (which are also stored within the repository)
+Author: https://github.com/Laura-Puckett
+
+This repositoory contains the original version of the downscaling files written by Laura Puckett as part of an undergraduate research project in 2018. The scripts have since been added the repository for the FLARE project and the most up-to-date version are available there (https://github.com/CareyLabVT/FLARE/tree/master/Rscripts/met_downscale).  
+
+ Running "run_downscaling.R" kicks off the downscaling process and calls functions that are stored in the other files within this repo.
